@@ -1,0 +1,11 @@
+LIBRARY "cpu_iterator"
+EXPORTS
+	iterate_batch
+	create_iterator
+	destroy_iterator
+	set_iterator_fractal
+	set_iterator_output
+	get_iterator_stats
+	reset_iterator
+	iterate_batch
+	

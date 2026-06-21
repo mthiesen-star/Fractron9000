@@ -1,0 +1,378 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>9.0.30729</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>Fractron9000</RootNamespace>
+    <AssemblyName>fractron9000</AssemblyName>
+    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <StartupObject>
+    </StartupObject>
+    <IsWebBootstrapper>false</IsWebBootstrapper>
+    <ManifestCertificateThumbprint>9F8DC5043C7DF3D6E165E9F1730C78637B5D35F1</ManifestCertificateThumbprint>
+    <ManifestKeyFile>Fractron2_TemporaryKey.pfx</ManifestKeyFile>
+    <GenerateManifests>true</GenerateManifests>
+    <SignManifests>false</SignManifests>
+    <PublishUrl>d:\projects\fractron2\installer\</PublishUrl>
+    <Install>true</Install>
+    <InstallFrom>Disk</InstallFrom>
+    <UpdateEnabled>false</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <ApplicationRevision>1</ApplicationRevision>
+    <ApplicationVersion>1.0.0.%2a</ApplicationVersion>
+    <UseApplicationTrust>false</UseApplicationTrust>
+    <PublishWizardCompleted>true</PublishWizardCompleted>
+    <BootstrapperEnabled>true</BootstrapperEnabled>
+    <ApplicationIcon>images\fractron9000.ico</ApplicationIcon>
+    <NoWin32Manifest>true</NoWin32Manifest>
+    <FileUpgradeFlags>
+    </FileUpgradeFlags>
+    <UpgradeBackupLocation>
+    </UpgradeBackupLocation>
+    <OldToolsVersion>3.5</OldToolsVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>..\Debug_x64\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>..\Release_x64\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>..\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebugType>full</DebugType>
+    <PlatformTarget>x86</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|x86' ">
+    <OutputPath>..\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>x86</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+  <ItemGroup>
+    <Compile Include="CPUEngine\CPUDeviceEntry.cs" />
+    <Compile Include="CPUEngine\CPUFractalEngine.cs" />
+    <Compile Include="DeviceEntry.cs" />
+    <Compile Include="CudaEngine\CudaDeviceEntry.cs" />
+    <Compile Include="DefaultFiles.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>DefaultFiles.resx</DependentUpon>
+    </Compile>
+    <Compile Include="EngineManager.cs" />
+    <Compile Include="Fractal.cs" />
+    <Compile Include="FlameFileIO.cs" />
+    <Compile Include="FractalList.cs" />
+    <Compile Include="FractronException.cs" />
+    <Compile Include="Kernels\KernelResources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>KernelResources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="NativeStructs.cs" />
+    <Compile Include="OpenCLEngine\OpenCLDeviceEntry.cs" />
+    <Compile Include="OpenCLEngine\OpenCLFractalEngine.cs" />
+    <Compile Include="HybridEngine\HybridDeviceEntry.cs" />
+    <Compile Include="HybridEngine\HybridFractalEngine.cs" />
+    <Compile Include="Palette.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="FractalEngine.cs">
+    </Compile>
+    <Compile Include="FractalManager.cs" />
+    <Compile Include="CudaEngine\CudaFractalEngine.cs" />
+    <Compile Include="GLUtil.cs" />
+    <Compile Include="Performance.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Include="TestRunner.cs">
+    </Compile>
+    <Compile Include="UI\ConfigForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\ConfigForm.Designer.cs">
+      <DependentUpon>ConfigForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\ErrorForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\ErrorForm.Designer.cs">
+      <DependentUpon>ErrorForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\ExportToImageDlg.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\ExportToImageDlg.Designer.cs">
+      <DependentUpon>ExportToImageDlg.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\FractronAboutBox.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\FractronAboutBox.Designer.cs">
+      <DependentUpon>FractronAboutBox.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\MainForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\Narratives.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Narratives.resx</DependentUpon>
+    </Compile>
+    <Compile Include="UI\PaletteControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UI\PaletteSelect1DForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\PaletteSelect1DForm.Designer.cs">
+      <DependentUpon>PaletteSelect1DForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\RenderControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="UI\TextDisplayForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\TextDisplayForm.Designer.cs">
+      <DependentUpon>TextDisplayForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="UI\ToolButton.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Variation.cs" />
+    <Compile Include="FractronConfig.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="nunit.framework, Version=2.5.5.10112, Culture=neutral, PublicKeyToken=96d09a1eb7f44a77, processorArchitecture=MSIL" />
+    <Reference Include="OpenTK, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
+    <Reference Include="OpenTK.GLControl, Version=1.0.0.0, Culture=neutral, PublicKeyToken=bad199fe84eb3df4, processorArchitecture=MSIL" />
+    <Reference Include="System" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Management" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <PropertyGroup>
+    <PreBuildEvent>
+    </PreBuildEvent>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="DefaultFiles.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>DefaultFiles.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Kernels\KernelResources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>KernelResources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>PublicResXFileCodeGenerator</Generator>
+      <SubType>Designer</SubType>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\ConfigForm.resx">
+      <DependentUpon>ConfigForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\ErrorForm.resx">
+      <DependentUpon>ErrorForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\ExportToImageDlg.resx">
+      <DependentUpon>ExportToImageDlg.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\FractronAboutBox.resx">
+      <DependentUpon>FractronAboutBox.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\MainForm.resx">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\Narratives.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Narratives.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\PaletteSelect1DForm.resx">
+      <DependentUpon>PaletteSelect1DForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="UI\TextDisplayForm.resx">
+      <DependentUpon>TextDisplayForm.cs</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework Client Profile</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.2.0">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 2.0 %28x86%29</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.0">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.0 %28x86%29</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5</ProductName>
+      <Install>false</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
+      <Visible>False</Visible>
+      <ProductName>.NET Framework 3.5 SP1</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+    <BootstrapperPackage Include="Microsoft.Windows.Installer.3.1">
+      <Visible>False</Visible>
+      <ProductName>Windows Installer 3.1</ProductName>
+      <Install>true</Install>
+    </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="images\fractron9000.ico" />
+    <None Include="images\saveIcon.png" />
+    <None Include="images\openIcon.png" />
+    <None Include="images\newIcon.png" />
+    <None Include="images\saveAllIcon.png" />
+    <None Include="images\saveAsImageIcon.png" />
+    <None Include="images\zoomInIcon.png" />
+    <None Include="images\zoomOutIcon.png" />
+    <None Include="images\flipVerticalIcon.png" />
+    <None Include="images\resetViewIcon.png" />
+    <None Include="images\viewPrevIcon.png" />
+    <None Include="images\viewNextIcon.png" />
+    <None Include="images\configIcon.png" />
+    <None Include="images\viewIcon.png" />
+    <None Include="images\removeBranchIcon.png" />
+    <None Include="images\invertBranchIcon.png" />
+    <None Include="images\duplicateBranchIcon.png" />
+    <None Include="images\addBranchIcon.png" />
+    <None Include="images\moveToBottomIcon.png" />
+    <None Include="images\moveDownIcon.png" />
+    <None Include="images\moveUpIcon.png" />
+    <None Include="images\moveToTopIcon.png" />
+    <None Include="images\deleteIcon.png" />
+    <None Include="Resources\palette_data_1d" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CudaDotNet\CudaDotNet.csproj">
+      <Project>{545F1C72-A26C-4985-B996-0932B7648335}</Project>
+      <Name>CudaDotNet</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\MTUtil\MTUtil.csproj">
+      <Project>{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}</Project>
+      <Name>MTUtil</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\OpenCLDotNet\OpenCLDotNet.csproj">
+      <Project>{2190B387-908E-4DE8-9939-BC5FD997679C}</Project>
+      <Name>OpenCLDotNet</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="images\helpIcon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="images\infoIcon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="images\ico16.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="images\divider.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="images\topbar_bg.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="images\viewEditorIcon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\license.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="def_palettes\inferno2.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="def_palettes\dark.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="def_palettes\default.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="def_fractals\My Fractals.flame" />
+    <None Include="def_fractals\Sample Fractals.flame" />
+    <None Include="def_palettes\frost.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\manual.html" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.config" />
+    <None Include="CPUEngine\tonemap.frag.glsl" />
+    <None Include="CPUEngine\tonemap.vert.glsl" />
+    <None Include="Kernels\kernels.cl" />
+    <None Include="Kernels\kernels.cu" />
+    <None Include="Kernels\kernels.ptx" />
+    <None Include="Kernels\kernels_low.cl" />
+    <None Include="Kernels\make_cl.bat" />
+    <None Include="Kernels\make_cuda.bat" />
+    <Content Include="Kernels\kernels.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Kernels\include\config.h" />
+    <Content Include="Kernels\include\data_types.h" />
+    <Content Include="Kernels\include\interop_cl.h" />
+    <Content Include="Kernels\include\interop_cuda.h" />
+    <Content Include="Kernels\include\variations.h" />
+    <Content Include="Kernels\include\random_mwc.h" />
+  </ItemGroup>
+</Project>

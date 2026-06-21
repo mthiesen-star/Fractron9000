@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   width="1024"
+   height="256"
+   id="svg2"
+   sodipodi:version="0.32"
+   inkscape:version="0.46"
+   version="1.0"
+   sodipodi:docname="logo.svg"
+   inkscape:output_extension="org.inkscape.output.svg.inkscape"
+   enable-background="new"
+   inkscape:export-filename="D:\projects\fractron9000\Fractron9000\logo_1024x256.png"
+   inkscape:export-xdpi="90"
+   inkscape:export-ydpi="90">
+  <defs
+     id="defs4">
+    <linearGradient
+       id="linearGradient3549">
+      <stop
+         style="stop-color:#000000;stop-opacity:1;"
+         offset="0"
+         id="stop3551" />
+      <stop
+         style="stop-color:#000000;stop-opacity:0;"
+         offset="1"
+         id="stop3553" />
+    </linearGradient>
+    <inkscape:perspective
+       sodipodi:type="inkscape:persp3d"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       id="perspective10" />
+    <inkscape:perspective
+       id="perspective2515"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+    <inkscape:perspective
+       id="perspective3252"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+    <filter
+       inkscape:collect="always"
+       id="filter3270"
+       x="-0.049798954"
+       width="1.0995979"
+       y="-0.12992016"
+       height="1.2598403">
+      <feGaussianBlur
+         inkscape:collect="always"
+         stdDeviation="3.9750346"
+         id="feGaussianBlur3272" />
+    </filter>
+    <filter
+       inkscape:collect="always"
+       id="filter3278">
+      <feGaussianBlur
+         inkscape:collect="always"
+         stdDeviation="2.5300231"
+         id="feGaussianBlur3280" />
+    </filter>
+    <filter
+       inkscape:collect="always"
+       id="filter3302">
+      <feBlend
+         inkscape:collect="always"
+         mode="screen"
+         in2="BackgroundImage"
+         id="feBlend3304" />
+    </filter>
+    <inkscape:perspective
+       id="perspective2475"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+    <inkscape:perspective
+       id="perspective2525"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+    <inkscape:perspective
+       id="perspective2621"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+    <inkscape:perspective
+       id="perspective2671"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+    <inkscape:perspective
+       id="perspective2721"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+    <inkscape:perspective
+       id="perspective2771"
+       inkscape:persp3d-origin="372.04724 : 350.78739 : 1"
+       inkscape:vp_z="744.09448 : 526.18109 : 1"
+       inkscape:vp_y="0 : 1000 : 0"
+       inkscape:vp_x="0 : 526.18109 : 1"
+       sodipodi:type="inkscape:persp3d" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient3549"
+       id="linearGradient3555"
+       x1="0"
+       y1="128"
+       x2="128"
+       y2="128"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient3549"
+       id="linearGradient3559"
+       gradientUnits="userSpaceOnUse"
+       x1="0"
+       y1="128"
+       x2="128"
+       y2="128"
+       gradientTransform="matrix(1.75,0,0,1,-1024,-256)" />
+    <filter
+       inkscape:collect="always"
+       id="filter3597"
+       x="-0.044826655"
+       width="1.0896533"
+       y="-0.18282799"
+       height="1.365656">
+      <feGaussianBlur
+         inkscape:collect="always"
+         stdDeviation="6.5917686"
+         id="feGaussianBlur3599" />
+    </filter>
+    <filter
+       inkscape:collect="always"
+       id="filter3617"
+       x="-0.023466875"
+       width="1.0469337"
+       y="-0.10559578"
+       height="1.2111916">
+      <feGaussianBlur
+         inkscape:collect="always"
+         stdDeviation="3.3489758"
+         id="feGaussianBlur3619" />
+    </filter>
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     gridtolerance="10000"
+     guidetolerance="10"
+     objecttolerance="10"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="1"
+     inkscape:cx="327.52838"
+     inkscape:cy="77.920752"
+     inkscape:document-units="px"
+     inkscape:current-layer="G_9000"
+     showgrid="false"
+     showguides="true"
+     inkscape:guide-bbox="true"
+     inkscape:window-width="1680"
+     inkscape:window-height="1028"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8">
+    <inkscape:grid
+       type="xygrid"
+       id="grid3295"
+       visible="true"
+       enabled="true"
+       spacingx="4px"
+       spacingy="4px"
+       empspacing="8"
+       dotted="true" />
+  </sodipodi:namedview>
+  <metadata
+     id="metadata7">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <g
+     inkscape:groupmode="layer"
+     id="layer2"
+     inkscape:label="Background"
+     style="display:inline"
+     sodipodi:insensitive="true">
+    <image
+       y="0"
+       x="0"
+       id="image2773"
+       height="256"
+       width="1024"
+       sodipodi:absref="d:\projects\fractron9000\Fractron9000\wisps2_1024x256.png"
+       xlink:href="d:\projects\fractron9000\Fractron9000\wisps2_1024x256.png" />
+    <rect
+       style="opacity:1;fill:url(#linearGradient3555);fill-opacity:1;stroke:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       id="rect2777"
+       width="128"
+       height="256"
+       x="0"
+       y="0" />
+    <rect
+       y="-256"
+       x="-1024"
+       height="256"
+       width="224"
+       id="rect3557"
+       style="opacity:1;fill:url(#linearGradient3559);fill-opacity:1;stroke:none;stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+       transform="scale(-1,-1)" />
+  </g>
+  <g
+     inkscape:groupmode="layer"
+     id="layer4"
+     inkscape:label="mask"
+     sodipodi:insensitive="true"
+     style="display:none">
+    <path
+       style="opacity:1;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-opacity:1;display:inline"
+       d="M -1024,-701.375 L -1024,1106.1875 L 2118.1875,1106.1875 L 2118.1875,-701.375 L -1024,-701.375 z M 0.65625,1.3125 L 1024,2.59375 L 1024,256 L 0.65625,254.71875 L 0.65625,1.3125 z"
+       id="rect3297"
+       sodipodi:nodetypes="cccccccccc"
+       inkscape:export-filename="D:\projects\Fractron2\logo_1024x256.png"
+       inkscape:export-xdpi="90"
+       inkscape:export-ydpi="90" />
+  </g>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     style="display:inline"
+     sodipodi:insensitive="true">
+    <g
+       id="G_Fractron"
+       transform="matrix(0.5761127,0,0,0.5761127,192.20855,4.7089138)">
+      <text
+         sodipodi:linespacing="125%"
+         inkscape:label="#text3302"
+         id="Fractron_b2"
+         y="99.927002"
+         x="73.222389"
+         style="font-size:90.61054993px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;fill:#007aff;fill-opacity:1;stroke:#0007ff;stroke-width:13.88617229;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter3597);font-family:Trebuchet MS;-inkscape-font-specification:Trebuchet MS"
+         xml:space="preserve"><tspan
+           y="99.927002"
+           x="73.222389"
+           id="tspan3420"
+           sodipodi:role="line"
+           style="stroke-width:13.88617229;stroke-miterlimit:4;stroke-dasharray:none">Fractron</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:90.61054993px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;opacity:1;fill:#007aff;fill-opacity:1;stroke:#ffffff;stroke-width:6.94308615;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter3617);font-family:Trebuchet MS;-inkscape-font-specification:Trebuchet MS"
+         x="73.222389"
+         y="99.927002"
+         id="Fractron_b1"
+         inkscape:label="#text3302"
+         sodipodi:linespacing="125%"><tspan
+           sodipodi:role="line"
+           id="tspan3402"
+           x="73.222389"
+           y="99.927002"
+           style="stroke-width:6.94308615;stroke-miterlimit:4;stroke-dasharray:none">Fractron</tspan></text>
+      <text
+         sodipodi:linespacing="125%"
+         inkscape:label="#text3302"
+         id="Fractron"
+         y="99.927002"
+         x="73.222389"
+         style="font-size:90.61054993px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;opacity:1;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;font-family:Trebuchet MS;-inkscape-font-specification:Trebuchet MS"
+         xml:space="preserve"><tspan
+           y="99.927002"
+           x="73.222389"
+           id="tspan3304"
+           sodipodi:role="line">Fractron</tspan></text>
+    </g>
+  </g>
+  <g
+     inkscape:groupmode="layer"
+     id="layer3"
+     inkscape:label="fx"
+     style="filter:url(#filter3302)">
+    <g
+       style="display:inline"
+       id="G_9000"
+       transform="matrix(0.5761127,0,0,0.5761127,212.88336,-14.429413)">
+      <text
+         inkscape:label="#text3306"
+         id="N9000_b2"
+         y="196.99794"
+         x="217.17213"
+         style="font-size:84.04098510999999400px;font-style:normal;font-weight:normal;fill:#00ff08;fill-opacity:1;stroke:#7bff82;stroke-width:13.88617192;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter3270);font-family:Bitstream Vera Sans"
+         xml:space="preserve"><tspan
+           y="196.99794"
+           x="217.17213"
+           id="tspan3316"
+           sodipodi:role="line"
+           style="stroke-width:13.88617192;stroke-miterlimit:4;stroke-dasharray:none">9000</tspan></text>
+      <text
+         xml:space="preserve"
+         style="font-size:84.04098510999999400px;font-style:normal;font-weight:normal;fill:#00ff08;fill-opacity:1;stroke:#ffffff;stroke-width:6.94308596;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter3278);font-family:Bitstream Vera Sans"
+         x="217.17213"
+         y="196.99794"
+         id="N9000_b1"
+         inkscape:label="#text3306"><tspan
+           sodipodi:role="line"
+           id="tspan3312"
+           x="217.17213"
+           y="196.99794"
+           style="stroke-width:6.94308596;stroke-miterlimit:4;stroke-dasharray:none">9000</tspan></text>
+      <text
+         inkscape:label="#text3306"
+         id="N9000"
+         y="196.99794"
+         x="217.17213"
+         style="font-size:84.04098511px;font-style:normal;font-weight:normal;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;font-family:Bitstream Vera Sans"
+         xml:space="preserve"><tspan
+           y="196.99794"
+           x="217.17213"
+           id="tspan3308"
+           sodipodi:role="line">9000</tspan></text>
+    </g>
+  </g>
+</svg>

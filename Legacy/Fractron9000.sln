@@ -1,0 +1,66 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual C# Express 2010
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CudaDotNet", "CudaDotNet\CudaDotNet.csproj", "{545F1C72-A26C-4985-B996-0932B7648335}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MTUtil", "MTUtil\MTUtil.csproj", "{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fractron9000", "Fractron9000\Fractron9000.csproj", "{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenCLDotNet", "OpenCLDotNet\OpenCLDotNet.csproj", "{2190B387-908E-4DE8-9939-BC5FD997679C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|Win32 = Debug|Win32
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|Win32 = Release|Win32
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{545F1C72-A26C-4985-B996-0932B7648335}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{545F1C72-A26C-4985-B996-0932B7648335}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{545F1C72-A26C-4985-B996-0932B7648335}.Debug|Win32.ActiveCfg = Debug|x86
+		{545F1C72-A26C-4985-B996-0932B7648335}.Debug|x86.ActiveCfg = Debug|x86
+		{545F1C72-A26C-4985-B996-0932B7648335}.Debug|x86.Build.0 = Debug|x86
+		{545F1C72-A26C-4985-B996-0932B7648335}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{545F1C72-A26C-4985-B996-0932B7648335}.Release|Any CPU.Build.0 = Release|Any CPU
+		{545F1C72-A26C-4985-B996-0932B7648335}.Release|Win32.ActiveCfg = Release|x86
+		{545F1C72-A26C-4985-B996-0932B7648335}.Release|x86.ActiveCfg = Release|x86
+		{545F1C72-A26C-4985-B996-0932B7648335}.Release|x86.Build.0 = Release|x86
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Debug|Win32.ActiveCfg = Debug|x86
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Debug|x86.ActiveCfg = Debug|x86
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Debug|x86.Build.0 = Debug|x86
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Release|Win32.ActiveCfg = Release|x86
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Release|x86.ActiveCfg = Release|x86
+		{BA10F124-2CB2-49D5-8CE3-6E70D19D73FC}.Release|x86.Build.0 = Release|x86
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Debug|Win32.ActiveCfg = Debug|x86
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Debug|x86.ActiveCfg = Debug|x86
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Debug|x86.Build.0 = Debug|x86
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Release|Win32.ActiveCfg = Release|x86
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Release|x86.ActiveCfg = Release|x86
+		{3D0DE533-11D4-49A9-BAC7-431C8A48CA64}.Release|x86.Build.0 = Release|x86
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Debug|Win32.ActiveCfg = Debug|Any CPU
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Debug|x86.ActiveCfg = Debug|x86
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Debug|x86.Build.0 = Debug|x86
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Release|Win32.ActiveCfg = Release|Any CPU
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Release|x86.ActiveCfg = Release|x86
+		{2190B387-908E-4DE8-9939-BC5FD997679C}.Release|x86.Build.0 = Release|x86
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,526 @@
+/*
+    Fractron 9000
+    Copyright (C) 2009 Michael J. Thiesen
+	http://mike.thiesen.us/projects/fractron-9000
+	mike@thiesen.us
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+*/
+
+#include "cuda_interop.cuh"
+#include "RandomMWC.cuh"
+#include "Affine2D.cuh"
+
+#define IterBlockSize 128
+#define IteratorCount (IterBlockSize*iterBlockCount)
+#define AALevel 2
+#define SubPixelCount (AALevel*AALevel)
+#define RasterBlockSize 8
+#define MaxBranches 16
+#define MaxFactors 18
+
+#define WarmupIterationCount 32
+
+#define PIf 3.14159265358f
+#define PIo2f 1.57079632679f
+#define InvPIo2f 0.636619772368f
+#define Epsilon 0.00000095367431640625f
+
+__constant__ int xRes;
+__constant__ int yRes;
+__constant__ int iterBlockCount;
+
+__constant__ DeviceBuffer2D<float2> iterPosStateBuffer;
+__constant__ DeviceBuffer2D<float4> iterColorStateBuffer;
+__constant__ DeviceBuffer2D<uint4>  entropyXBuffer;
+__constant__ DeviceBuffer2D<uint>   entropyCBuffer;
+__constant__ DeviceBuffer2D<uint>   entropySeedBuffer;
+__constant__ DeviceBuffer2D<UInt64> dotCountBuffer;
+__constant__ DeviceBuffer2D<float>  peakDensityBuffer;
+__constant__ UInt64* totalDotCountMem;
+__constant__ float* densityMem;
+__constant__ float* peakDensityMem;
+__constant__ float* scaleConstantMem;
+__constant__ DeviceBuffer2D<float4> accumBuffer;
+
+__constant__ Affine2D vpsTransform; //transforms a point from world space to screen space
+
+__constant__ float brightness;
+__constant__ float invGamma;
+
+__constant__ uint     branchCount;
+__constant__ uint     branchNormWeights[MaxBranches];
+__constant__ float    branchColorWeights[MaxBranches];
+__constant__ Affine2D branchTransforms[MaxBranches];
+__constant__ float    branchLumas[MaxBranches];
+__constant__ float2   branchChromas[MaxBranches];
+__constant__ float    branchFactors[MaxBranches*MaxFactors];
+
+texture<float4, 2, cudaReadModeElementType> paletteTex;
+
+__device__ float lerp( float n1, float n2, float a )
+{
+	return n1 + a * ( n2 - n1 );
+}
+
+__device__ void iterate(float2* pos, float4* color, uint branch)
+{
+	#define AccumResult(i) result.x += factors[i]*nx; result.y += factors[i]*ny
+	float x,y;
+	float tx,ty;
+	float nx,ny;
+	float* factors = branchFactors + branch*MaxFactors;
+	
+	float2 result;
+	result.x = 0.0f;
+	result.y = 0.0f;
+	
+	color->x = lerp(color->x, branchChromas[branch].x, branchColorWeights[branch]);
+	color->y = lerp(color->y, branchChromas[branch].y, branchColorWeights[branch]);
+	color->z = lerp(color->z, branchLumas[branch]    , branchColorWeights[branch]);
+	
+	x = pos->x;
+	y = pos->y;
+	Affine2D t = branchTransforms[branch];
+	Affine2D ti;
+	ti = t.getInverse();
+	
+	float rsq,r;
+	float theta;
+	float j,k;
+	
+	t.transformPoint(&tx, &ty, x, y);
+	rsq = tx*tx + ty*ty + Epsilon;
+	r = sqrtf(rsq);
+	theta = atan2f(y,x);
+	
+	//Linear
+	if(factors[0] > 0.0f)
+	{
+		nx = tx;
+		ny = ty;
+		AccumResult(0);
+	}
+	
+	//Apophysis Sinusoidal
+	if(factors[1] > 0.0f)
+	{
+		nx = sinf(tx);
+		ny = sinf(ty);
+		AccumResult(1);
+	}
+	
+	//Apophysis Spherical
+	if(factors[2] > 0.0f)
+	{
+		nx = tx / rsq;
+		ny = ty / rsq;
+		AccumResult(2);
+	}
+	
+	//Apophysis Swirl
+	if(factors[3] > 0.0f)
+	{
+		nx = r * cosf(theta + r);
+		ny = r * sinf(theta + r);
+		AccumResult(3);
+	}
+	
+	//Apophysis Horseshoe
+	if(factors[4] > 0.0f)
+	{
+		nx = (tx*tx - ty*ty)/r;
+		ny = (2.0f*tx*ty)/r;
+		AccumResult(4);
+	}
+	
+	//Apophysis Polar
+	if(factors[5] > 0.0f)
+	{
+		nx = theta / PIf;
+		ny = r - 1.0f;
+		AccumResult(5);
+	}
+	
+	//Apophysis Handkerchief
+	if(factors[6] > 0.0f)
+	{
+		nx =  __cosf(r)*ty + __sinf(r)*tx;
+		ny =  __sinf(r)*ty + __cosf(r)*tx;
+		AccumResult(6);
+	}
+	
+	//Apophysis Heart
+	if(factors[7] > 0.0f)
+	{
+		nx =  r*sinf(theta*r);
+		ny = -r*cosf(theta*r);
+		AccumResult(7);
+	}
+	
+	//Apophysis Disc
+	if(factors[8] > 0.0f)
+	{
+		nx =  theta*__sinf(PIf*r)/PIf;
+		ny =  theta*__cosf(PIf*r)/PIf;
+		AccumResult(8);
+	}
+	
+	//Apophysis Spiral
+	if(factors[9] > 0.0f)
+	{
+		nx =  (tx + r*__sinf(r))/rsq;
+		ny =  (ty - r*__cosf(r))/rsq;
+		AccumResult(9);
+	}
+	
+	//Apophysis Hyperbolic
+	if(factors[10] > 0.0f)
+	{
+		nx =  ty/rsq;
+		ny =  tx;
+		AccumResult(10);
+	}
+	
+	//Apophysis Diamond
+	if(factors[11] > 0.0f)
+	{
+		nx =  ty/r*__cosf(r);
+		ny =  tx/r*__sinf(r);
+		AccumResult(11);
+	}
+	
+	//Apophysis Ex
+	if(factors[12] > 0.0f)
+	{
+		j = __cosf(r)*ty + __sinf(r)*tx;
+		nx =  j*j*j/rsq;
+		k = __sinf(r)*ty + __cosf(r)*tx;
+		ny =  k*k*k/rsq;
+		AccumResult(12);
+	}
+	
+	//Apophysis Julia
+	if(factors[13] > 0.0f)
+	{
+		nx = tx;
+		ny = ty;
+		//tmp = sqrtf(r);
+		//nx =  tmp*cos(th/2.0f);
+		//ny =  tmp*sin(th/2.0f);
+		AccumResult(13);
+	}
+	
+	//Fractron Spherical
+	if(factors[14] > 0.0f)
+	{
+		ti.transformPoint(&nx, &ny, x, y);
+		rsq = nx*nx + ny*ny + Epsilon;
+		nx =  nx / rsq;
+		ny =  ny / rsq;
+		t.transformPoint(&nx, &ny, nx, ny);
+		AccumResult(14);
+	}
+	
+	//Fractron Horseshoe
+	if(factors[15] > 0.0f)
+	{
+		ti.transformPoint(&nx, &ny, x, y);
+		rsq = nx*nx+ny*ny;
+		r = sqrtf(rsq);
+		j = (nx*nx - ny*ny)/r;
+		k = (2.0f*nx*ny)/r;
+		t.transformPoint(&nx, &ny, j, k);
+		AccumResult(15);
+	}
+	
+	//Fractron Bubble
+	if(factors[16] > 0.0f)
+	{
+		ti.transformPoint(&nx, &ny, x, y);
+		rsq = nx*nx+ny*ny;
+		k = 2.0f/(rsq+1);
+		nx = k*nx;
+		ny = k*ny;
+		t.transformPoint(&nx, &ny, nx, ny);
+		AccumResult(16);
+	}
+	
+	//Fractron Sinusoidal
+	if(factors[17] > 0.0f)
+	{
+		ti.transformPoint(&nx, &ny, x, y);
+		r = sqrtf(nx*nx+ny*ny);
+		k = sinf(r*PIo2f);
+		nx = k*nx;
+		ny = k*ny;
+		t.transformPoint(&nx, &ny, nx, ny);
+		AccumResult(17);
+	}
+	
+	#undef AccumResult
+	
+	*pos = result;
+}
+
+__device__ uint chooseRandomBranch(uint4* randXBuffer, uint* randCBuffer)
+{
+	uint branch = 0;
+	uint rnd = MWC_rand(randXBuffer, randCBuffer, threadIdx.x) & 0x0000FFFF;
+
+	#pragma unroll
+	for(int i = 0; i < MaxBranches; i++)
+		if(rnd >= branchNormWeights[i])
+			branch++;
+	
+	//while(branch < branchCount-1 && rnd >= branchNormWeights[branch])
+	//	branch++;
+	return branch;
+}
+
+extern "C"
+__global__ void init_iterators_kernel()
+{
+	#define IterIdx (blockDim.x*blockIdx.x + threadIdx.x)
+	
+	__shared__ uint4 randXBuffer   [IterBlockSize];
+	__shared__ uint  randCBuffer   [IterBlockSize];
+	__shared__ uint  randSeedBuffer[IterBlockSize];
+	
+	randXBuffer   [threadIdx.x] = make_uint4(0,0,0,0);
+	randCBuffer   [threadIdx.x] = 0;
+	randSeedBuffer[threadIdx.x] = entropySeedBuffer[blockIdx.x][threadIdx.x];
+	
+	MWC_seed(randXBuffer, randCBuffer, threadIdx.x, randSeedBuffer);
+	
+	entropyXBuffer[blockIdx.x][threadIdx.x] = randXBuffer[threadIdx.x];
+	entropyCBuffer[blockIdx.x][threadIdx.x] = randCBuffer[threadIdx.x];
+}
+
+extern "C"
+__global__ void reset_iterators_kernel(DeviceBuffer2D<uint> output)
+{
+	int iter;
+	uint branch;
+	float rndf;
+	float2 pos;
+	float4 color;
+	
+	__shared__ uint4 randXBuffer   [IterBlockSize];
+	__shared__ uint  randCBuffer   [IterBlockSize];
+	__shared__ uint  randSeedBuffer[IterBlockSize];
+	randXBuffer   [threadIdx.x] = entropyXBuffer   [blockIdx.x][threadIdx.x];
+	randCBuffer   [threadIdx.x] = entropyCBuffer   [blockIdx.x][threadIdx.x];
+	randSeedBuffer[threadIdx.x] = entropySeedBuffer[blockIdx.x][threadIdx.x];
+	
+	MWC_seed(randXBuffer, randCBuffer, threadIdx.x, randSeedBuffer);
+
+
+	rndf = (float)(MWC_rand(randXBuffer, randCBuffer, threadIdx.x) & 0x000FFFFF) / 1048575.0f;
+	pos.x = 2.0f*rndf - 1.0f;
+	rndf = (float)(MWC_rand(randXBuffer, randCBuffer, threadIdx.x) & 0x000FFFFF) / 1048575.0f;
+	pos.y = 2.0f*rndf - 1.0f;
+	
+	color.x = 0.5f;
+	color.y = 0.5f;
+	color.z = 0.5f;
+	color.w = 0.0f;
+	
+	for(iter = 0; iter < WarmupIterationCount; iter++)
+	{
+		branch = chooseRandomBranch(randXBuffer, randCBuffer);
+		iterate(&pos, &color, branch);
+	}
+
+	iterPosStateBuffer  [blockIdx.x][threadIdx.x] = pos;
+	iterColorStateBuffer[blockIdx.x][threadIdx.x] = color;
+	entropyXBuffer   [blockIdx.x][threadIdx.x] = randXBuffer[threadIdx.x];
+	entropyCBuffer   [blockIdx.x][threadIdx.x] = randCBuffer[threadIdx.x];
+	dotCountBuffer   [blockIdx.x][threadIdx.x] = 0;
+	peakDensityBuffer[blockIdx.x][threadIdx.x] = 0.0f;
+}
+
+extern "C"
+__global__ void reset_output_kernel(DeviceBuffer2D<uint> glOutputBuffer)
+{
+	int x = blockDim.x*blockIdx.x + threadIdx.x;
+	int y = blockDim.y*blockIdx.y + threadIdx.y;
+	if(x >= xRes || y >= yRes) return;
+	
+	accumBuffer[y][4*x+0] = make_float4(0.0f,0.0f,0.0f,0.0f);
+	accumBuffer[y][4*x+1] = make_float4(0.0f,0.0f,0.0f,0.0f);
+	accumBuffer[y][4*x+2] = make_float4(0.0f,0.0f,0.0f,0.0f);
+	accumBuffer[y][4*x+3] = make_float4(0.0f,0.0f,0.0f,0.0f);
+	
+	glOutputBuffer[y][x] = 0xFF000000;
+}
+
+extern "C"
+__global__ void iterate_kernel(uint iterCount)
+{
+	//float r;
+	float2 pos;
+	float4 color;
+	
+	float4 mem;
+	float2 screenPos;
+	uint branch;
+	UInt64 dotCount;
+	float peakCount;
+	int xa,ya;
+	int x;
+	int y;
+	int si;
+	uint iter;
+	
+	dotCount = dotCountBuffer[blockIdx.x][threadIdx.x];
+	peakCount = peakDensityBuffer[blockIdx.x][threadIdx.x];
+	
+	__shared__ uint4 randXBuffer[IterBlockSize];
+	__shared__ uint  randCBuffer[IterBlockSize];
+	randXBuffer[threadIdx.x] = entropyXBuffer[blockIdx.x][threadIdx.x];
+	randCBuffer[threadIdx.x] = entropyCBuffer[blockIdx.x][threadIdx.x];
+	//MWC_seed(randXBuffer, randCBuffer, threadIdx.x, seed + idx);
+
+	pos =   iterPosStateBuffer[blockIdx.x][threadIdx.x];
+	color = iterColorStateBuffer[blockIdx.x][threadIdx.x];
+	
+	for(iter = 0; iter < iterCount; iter++)
+	{
+		branch = chooseRandomBranch(randXBuffer, randCBuffer);
+
+		iterate(&pos, &color, branch);
+		
+		vpsTransform.transformPoint(&screenPos.x, &screenPos.y, pos.x, pos.y);
+		xa = 2.0f*screenPos.x;
+		ya = 2.0f*screenPos.y;
+		x = xa >> 1;
+		y = ya >> 1;
+		
+		if(x >= 0 && x < xRes && y >= 0 && y < yRes)
+		{
+			si = ((ya&1)<<1) | (xa&1); //calc subpixel index
+			
+			//this is not actually thread safe, but hopefully it wont screw up the counts
+			//enough to trash the image
+			mem = accumBuffer[y][4*x+si];
+			mem.x += color.x;
+			mem.y += color.y;
+			mem.z += color.z;
+			mem.w += 1.0f;
+			accumBuffer[y][4*x+si] = mem;
+						
+			dotCount++;
+			peakCount = fmaxf(peakCount, mem.w);
+		}
+	}
+	
+	iterPosStateBuffer  [blockIdx.x][threadIdx.x] = pos;
+	iterColorStateBuffer[blockIdx.x][threadIdx.x] = color;
+	entropyXBuffer   [blockIdx.x][threadIdx.x] = randXBuffer[threadIdx.x];
+	entropyCBuffer   [blockIdx.x][threadIdx.x] = randCBuffer[threadIdx.x];
+	dotCountBuffer   [blockIdx.x][threadIdx.x] = dotCount;
+	peakDensityBuffer[blockIdx.x][threadIdx.x] = peakCount;
+}
+
+extern "C"
+__global__ void update_stats_kernel()
+{
+	UInt64 totalDotCount = 0;
+	float peakDensity = 0;
+	for(int row = 0; row < iterBlockCount; row++)
+	{
+		for(int col = 0; col < IterBlockSize; col++)
+		{
+			totalDotCount += dotCountBuffer[row][col];
+			peakDensity = fmax(peakDensity, peakDensityBuffer[row][col]);
+		}
+	}
+	float density = (float)totalDotCount / (float)(xRes*yRes);
+	float peak_norm = fmaxf(0.0f, peakDensity / density);
+	float scale_constant = 1.0f / logf( peak_norm + 1.0f );
+	
+	*totalDotCountMem = totalDotCount;
+	*densityMem = fmax(density,Epsilon);
+	*peakDensityMem = fmax(peakDensity,Epsilon);
+	
+	*scaleConstantMem = scale_constant;
+}
+
+extern "C"
+__device__ uint4 tonemap(float4 rawPix, float density, float peakDensity, float scale_constant)
+{
+	float cw_norm, z;
+	
+	uint4 result;
+	
+	float kw = 1.0f/rawPix.w;
+	
+	float  luma = __saturatef(kw*rawPix.z);
+	float4 chroma = tex2D(paletteTex, kw*rawPix.x, kw*rawPix.y);
+	result.x = min(255, (uint)(255.0f*chroma.x*luma));
+	result.y = min(255, (uint)(255.0f*chroma.y*luma));
+	result.z = min(255, (uint)(255.0f*chroma.z*luma));
+	
+	cw_norm = fmaxf(0.0f, rawPix.w / density);
+	
+	z = brightness*scale_constant*logf(cw_norm+1.0f);
+	z = __saturatef(powf(z,invGamma));
+	
+	result.w = (uint)(z*255.0f);
+	return result;
+}
+
+extern "C"
+__global__ void update_output_kernel(DeviceBuffer2D<uint> glOutputBuffer)
+{
+	__shared__ float density;
+	__shared__ float peak_density;
+	__shared__ float scale_constant;
+	
+	int x = blockDim.x*blockIdx.x + threadIdx.x;
+	int y = blockDim.y*blockIdx.y + threadIdx.y;
+	if(x >= xRes || y >= yRes) return;
+	
+	
+	if(threadIdx.x|threadIdx.y == 0)
+	{
+		density = *densityMem;
+		peak_density = *peakDensityMem;
+		scale_constant = *scaleConstantMem;
+	}
+	__syncthreads();
+	
+
+	uint4 pix;
+	uint4 acc;
+	acc = tonemap( accumBuffer[y][4*x+0], density, peak_density, scale_constant);
+		
+	pix = tonemap( accumBuffer[y][4*x+1], density, peak_density, scale_constant );
+	acc.x += pix.x; acc.y += pix.y; acc.z += pix.z; acc.w += pix.w;
+	
+	pix = tonemap( accumBuffer[y][4*x+2], density, peak_density, scale_constant );
+	acc.x += pix.x; acc.y += pix.y; acc.z += pix.z; acc.w += pix.w;
+	
+	pix = tonemap( accumBuffer[y][4*x+3], density, peak_density, scale_constant );
+	acc.x += pix.x; acc.y += pix.y; acc.z += pix.z; acc.w += pix.w;
+	
+	acc.x /= 4;
+	acc.y /= 4;
+	acc.z /= 4;
+	acc.w /= 4;
+	
+	glOutputBuffer[y][x] = acc.w << 24 | acc.z << 16 | acc.y << 8 | acc.x;
+}

@@ -1,0 +1,31 @@
+            Fractron 9000 Change Log
+
+Version 0.4 Beta
+ - Added support for OpenCL rendering
+ - Added support for rendering through OpenGL and the host CPU
+ - Switched to .NET framework 2.0 instead of 3.5
+ - Fixed a bug that caused poor anti-aliasing quality
+ - Added option for JPEG image output
+ - Added option for PNG transparency
+ - Added "bulge" variation
+ - Got rid of cuda9k.dll. The program now links directly to nvcuda.dll.
+ - Improved error handling and reporting
+
+Version 0.3 Beta
+ - Fixed a bug that caused invalid configuration to be saved on 'Out of memory' errors
+ - Added partial support for .flame files
+ - Added 1D palettes
+ - Added more variations
+ - Made several UI improvements
+ - Fixed a bug that reduced render quality with some palettes
+ - Added more configuration options for tweaking performance
+ - Improved error reporting somewhat
+
+Version 0.2 Beta
+ - Switched to the GPLv2 license
+ - Added a simple help dialog describing the program's controls
+ - Crashes are handled a little bit more gracefuly
+ - Fixed a minor panning bug
+
+Version 0.1 Beta
+ - First Beta Release

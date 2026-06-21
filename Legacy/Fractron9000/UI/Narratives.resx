@@ -1,0 +1,196 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- 
+    Microsoft ResX Schema 
+    
+    Version 2.0
+    
+    The primary goals of this format is to allow a simple XML format 
+    that is mostly human readable. The generation and parsing of the 
+    various data types are done through the TypeConverter classes 
+    associated with the data types.
+    
+    Example:
+    
+    ... ado.net/XML headers & schema ...
+    <resheader name="resmimetype">text/microsoft-resx</resheader>
+    <resheader name="version">2.0</resheader>
+    <resheader name="reader">System.Resources.ResXResourceReader, System.Windows.Forms, ...</resheader>
+    <resheader name="writer">System.Resources.ResXResourceWriter, System.Windows.Forms, ...</resheader>
+    <data name="Name1"><value>this is my long string</value><comment>this is a comment</comment></data>
+    <data name="Color1" type="System.Drawing.Color, System.Drawing">Blue</data>
+    <data name="Bitmap1" mimetype="application/x-microsoft.net.object.binary.base64">
+        <value>[base64 mime encoded serialized .NET Framework object]</value>
+    </data>
+    <data name="Icon1" type="System.Drawing.Icon, System.Drawing" mimetype="application/x-microsoft.net.object.bytearray.base64">
+        <value>[base64 mime encoded string representing a byte array form of the .NET Framework object]</value>
+        <comment>This is a comment</comment>
+    </data>
+                
+    There are any number of "resheader" rows that contain simple 
+    name/value pairs.
+    
+    Each data row contains a name, and value. The row also contains a 
+    type or mimetype. Type corresponds to a .NET class that support 
+    text/value conversion through the TypeConverter architecture. 
+    Classes that don't support this are serialized and stored with the 
+    mimetype set.
+    
+    The mimetype is used for serialized objects, and tells the 
+    ResXResourceReader how to depersist the object. This is currently not 
+    extensible. For a given mimetype the value must be set accordingly:
+    
+    Note - application/x-microsoft.net.object.binary.base64 is the format 
+    that the ResXResourceWriter will generate, however the reader can 
+    read any of the formats listed below.
+    
+    mimetype: application/x-microsoft.net.object.binary.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Binary.BinaryFormatter
+            : and then encoded with base64 encoding.
+    
+    mimetype: application/x-microsoft.net.object.soap.base64
+    value   : The object must be serialized with 
+            : System.Runtime.Serialization.Formatters.Soap.SoapFormatter
+            : and then encoded with base64 encoding.
+
+    mimetype: application/x-microsoft.net.object.bytearray.base64
+    value   : The object must be serialized into a byte array 
+            : using a System.ComponentModel.TypeConverter
+            : and then encoded with base64 encoding.
+    -->
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Error_BuildFailed" xml:space="preserve">
+    <value>Build Failed::Program Compilation Failed:
+{0}</value>
+  </data>
+  <data name="Error_CudaVersionFail" xml:space="preserve">
+    <value>Startup Failed::Your CUDA version appears to be out of date. Please ensure you have the latest video drivers installed and try again.</value>
+  </data>
+  <data name="Error_DllNotFound" xml:space="preserve">
+    <value>DLL Not Found::A required .dll file could not be found. Please try reinstalling Fractron 9000. Please also ensure you have the latest drivers installed for your video card.</value>
+  </data>
+  <data name="Error_EngineCycle" xml:space="preserve">
+    <value>Fractal Engine Error::Uh-oh, the rendering engine has crashed. This may be caused by invalid settings, or possibly a bug.</value>
+  </data>
+  <data name="Error_EngineStartupFail" xml:space="preserve">
+    <value>Startup Failed::The fractal engine could not start.
+Please try the following:
+
+1. Make sure you have Microsoft's .NET Framework 2.0 installed. It can be downloaded for free at:
+http://www.microsoft.com/downloads/details.aspx?familyid=0856eacb-4362-4b0d-8edd-aab15c5e04f5&amp;displaylang=en
+
+2. Make sure you have the latest drivers for your video card.
+Nvidia drivers can be downloaded at: http://www.nvidia.com/Download/index.aspx?lang=en-us
+AMD/ATI drivers can be downloaded at: http://support.amd.com/us/gpudownload/Pages/index.aspx
+
+3. Try choosing a different rendering device from the configuration dialog in the edit menu.
+
+If Fractron 9000 still won't start, it is most likely due to a bug. Fractron is still under development, so future versions should be more stable.</value>
+  </data>
+  <data name="Error_FlameLoadFailed" xml:space="preserve">
+    <value>Library Load Failed::Could not open the .flame library file "{0}".</value>
+  </data>
+  <data name="Error_FlameSaveFailed" xml:space="preserve">
+    <value>Library Save Failed::Could not save the .flame library file to "{0}".</value>
+  </data>
+  <data name="Error_FractalOpenFailed" xml:space="preserve">
+    <value>Fractal Load Failed::The fractal file failed to open. The file may be corrupt.</value>
+  </data>
+  <data name="Error_ImageSaveFailed" xml:space="preserve">
+    <value>Image Save Failed::Could not save image "{0}".</value>
+  </data>
+  <data name="Error_InitConfigLoadFailed" xml:space="preserve">
+    <value>Initial Configuration Failed::Failed to perform initial configuration. Attempting to continue.</value>
+  </data>
+  <data name="Error_NoDevicesFound" xml:space="preserve">
+    <value>No Compatible Hardware Found::Fractron 9000 couldn't find any compatable rendering devices. Make sure you have the latest video drivers installed. Click on "Help" -&gt; "Hardware Info" for details.</value>
+  </data>
+  <data name="Error_OpenGLVersion" xml:space="preserve">
+    <value>Required OpenGL Version Not Found::Fractron 9000 requires {0} version {1} or higher. The currently installed version is version {2}. Updating your video card drivers may solve this problem. </value>
+  </data>
+  <data name="Error_OutOfMemory" xml:space="preserve">
+    <value>Out of Video Memory::Uh-oh, it looks like Fractron 9000 has run out of video memory. To fix this, open the Configuration dialog from the Edit menu and try lowering the custom output resolution. Closing the program and restarting may also help.</value>
+  </data>
+  <data name="Error_Unknown" xml:space="preserve">
+    <value>Unknown Error::An unknown error has occured.</value>
+  </data>
+  <data name="Info_Description" xml:space="preserve">
+    <value>Fractron 9000 is a high performance fractal flame renderer. Fractron 9000 takes advantage of modern programmable graphics processors to dramatically speed up rendering.
+
+Currently, Fractron 9000 supports rendering through OpenCL, NVidia CUDA, and OpenGL 2.0.</value>
+  </data>
+  <data name="Info_LicenseBrief" xml:space="preserve">
+    <value>This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.</value>
+  </data>
+  <data name="Notice_BackupCreated" xml:space="preserve">
+    <value>This file has been backed up as {0}.</value>
+  </data>
+  <data name="Notice_NonFractronFile" xml:space="preserve">
+    <value>This file appears to be created in a program other than Fractron 9000. Fractron is not fully compatible with other fractal flame software, so it is a good idea to back this file up before editing it.
+Would you like to back this file up now?</value>
+  </data>
+  <data name="TestMessage" xml:space="preserve">
+    <value>Just a test</value>
+  </data>
+  <data name="Warning_BackupFailed" xml:space="preserve">
+    <value>Warning: Could not create backup file {0}.</value>
+  </data>
+</root>

@@ -1,0 +1,492 @@
+using System;
+using System.IO;
+using System.Diagnostics;
+using System.Drawing;
+using System.Runtime.InteropServices;
+using MTUtil.Extensions;
+using OpenTK;
+using OpenTK.Graphics;
+using Cuda;
+using MTUtil;
+
+namespace Fractron2
+{
+	public class FractalEngine
+	{
+		const int MaxBranches = 16;
+		const int MaxFactors = 16;
+
+		const int AALevel = 2;
+		const int RasterBlockSize = 8;
+		const int SubPixelByteSize = 16;
+
+		const int IterBlockSize = 128;
+		const int IterBlockCount = 32;
+		const int IteratorCount = IterBlockSize*IterBlockCount;
+		const int IterEntropyXSizePerThread = 4;
+		const int IterEntropyYSizePerThread = 5;
+
+		const int HistBucketCount = 33;
+		
+		Device dev;
+		Context context;
+		Module module;
+		Kernel initIteratorsKernel;
+
+		Kernel resetIteratorsKernel;
+		Kernel resetOutputKernel;
+
+		Kernel iterateKernel;
+		UInt32 iterateCallCount;
+		UInt32 masterIterationCount = 0;
+		UInt64 totalIterationCount = 0;
+		UInt64 totalHitCount;
+		float peakDensity;
+		Kernel updateOutputKernel;
+
+		Random rand = new Random();
+
+		UInt32 statIterateCallCount = 0;
+		Stopwatch masterClock = new Stopwatch();
+		Stopwatch resetClock = new Stopwatch();
+		Stopwatch iterClock = new Stopwatch();
+		Stopwatch memClock = new Stopwatch();
+		Stopwatch toneClock = new Stopwatch();
+		Stopwatch totalClock = new Stopwatch();
+
+		int xRes;
+		int yRes;
+		int xRasterBlockCount;
+		int yRasterBlockCount;
+		DeviceBuffer iterStateBuffer;
+		DeviceBuffer entropyXBuffer;
+		DeviceBuffer entropyCBuffer;
+		DeviceBuffer entropySeedBuffer;
+		DeviceBuffer hitCountBuffer;
+		HostBuffer hostHitCountBuffer;
+		DeviceBuffer peakDensityBuffer;
+		HostBuffer hostPeakDensityBuffer;
+		DeviceBuffer accumXBuffer;
+		DeviceBuffer accumYBuffer;
+		DeviceBuffer accumABuffer;
+		HostBuffer hostPaletteBuffer;
+		CudaArray paletteImage;
+		TexRef paletteTex;
+		UInt32 outputBufferID;
+		
+		FractalManager fractal;
+		
+		private bool paletteDirty;
+		private bool toneMapDirty;
+		private bool geometryDirty;
+
+		public UInt32 OutputBufferID{
+			get{ return outputBufferID; }
+		}
+		public int XRes{
+			get{ return xRes; }
+		}
+		public int YRes{
+			get{ return yRes; }
+		}
+		public UInt64 TotalHitCount{
+			get{ return totalHitCount; }
+		}
+		public double DotDensity{  //the average number of dots per pixel
+			get{ return (double)TotalHitCount / (double)(XRes*YRes); }
+		}
+		public double PeakDensity{  //the max number of dots per pixel
+			get{ return (double)peakDensity; }
+		}
+
+		public FractalManager Fractal{
+			get{ return fractal; }
+			set{
+				fractal = value;
+				paletteDirty = toneMapDirty = geometryDirty = true;
+				fractal.PaletteChanged  += (frac)=>{ paletteDirty = true; };
+				fractal.ToneMapChagned  += (frac)=>{ toneMapDirty = true; };
+				fractal.GeometryChanged += (frac)=>{ geometryDirty = true; };
+			}
+		}
+
+		public bool Dirty{
+			get{ return geometryDirty || toneMapDirty || paletteDirty; }
+		}
+
+		public FractalEngine()
+		{
+			dev = Device.Devices[0];
+			context = dev.CreateContext();
+
+			module = context.LoadModule("kernels.ptx");
+			initIteratorsKernel = module.GetKernel("init_iterators_kernel");
+			resetIteratorsKernel = module.GetKernel("reset_iterators_kernel");
+			iterateKernel = module.GetKernel("iterate_kernel");
+			
+			resetOutputKernel = module.GetKernel("reset_output_kernel");
+			updateOutputKernel = module.GetKernel("update_output_kernel");
+			outputBufferID = 0;			
+			
+			iterStateBuffer = DeviceBuffer.Alloc2D(16, IterBlockSize, IterBlockCount);
+			module.WriteConstant("iterStateBuffer", iterStateBuffer);
+
+			entropyXBuffer = DeviceBuffer.Alloc2D(16, IterBlockSize, IterBlockCount);
+			module.WriteConstant("entropyXBuffer", entropyXBuffer);
+			entropyCBuffer = DeviceBuffer.Alloc2D(4, IterBlockSize, IterBlockCount);
+			module.WriteConstant("entropyCBuffer", entropyCBuffer);
+			entropySeedBuffer = DeviceBuffer.Alloc2D(4, IterBlockSize, IterBlockCount);
+			module.WriteConstant("entropySeedBuffer", entropySeedBuffer);
+			
+			HostBuffer hostEntropySeedBuffer = HostBuffer.Alloc2D(4, IterBlockSize, IterBlockCount);
+			uint rnd;
+			for(int y = 0; y < IterBlockCount; y++)
+			{
+				for(int x = 0; x < IterBlockSize; x++)
+				{
+					rnd = (uint)rand.Next(65536);
+					hostEntropySeedBuffer.WriteElement2D(x, y, rnd);
+				}
+			}
+
+			hostEntropySeedBuffer.CopyTo(entropySeedBuffer);
+			hostEntropySeedBuffer.Free();
+
+
+			hitCountBuffer = DeviceBuffer.Alloc1D(4, IteratorCount);
+			hostHitCountBuffer = HostBuffer.Alloc1D(4, IteratorCount);
+			module.WriteConstant("hitCountBuffer", hitCountBuffer);
+
+			peakDensityBuffer = DeviceBuffer.Alloc1D(4, IteratorCount);
+			hostPeakDensityBuffer = HostBuffer.Alloc1D(4, IteratorCount);
+			module.WriteConstant("peakDensityBuffer", peakDensityBuffer);
+			
+			paletteImage = CudaArray.Allocate(256,256,CudaArrayFormat.Float,4);
+			hostPaletteBuffer = HostBuffer.Alloc2D(16,256,256);
+
+			paletteTex = module.GetTexRef("paletteTex");
+
+			initIteratorsKernel.SetBlockShape(IterBlockSize,1,1);
+			initIteratorsKernel.SetGridDim(IterBlockCount,1);
+			initIteratorsKernel.SetSharedSize(0);
+			resetIteratorsKernel.SetBlockShape(IterBlockSize,1,1);
+			resetIteratorsKernel.SetGridDim(IterBlockCount,1);
+			resetIteratorsKernel.SetSharedSize(0);
+			iterateKernel.SetBlockShape(IterBlockSize,1,1);
+			iterateKernel.SetGridDim(IterBlockCount,1);
+			iterateKernel.SetSharedSize(0);
+
+			initIteratorsKernel.Launch();
+			context.Synchronize();
+		}
+		
+		~FractalEngine()
+		{
+			Destroy();
+		}
+
+		public void Destroy()
+		{
+			Deallocate();
+			iterStateBuffer.Free();
+			entropyXBuffer.Free();
+			entropyCBuffer.Free();
+			hitCountBuffer.Free();
+			hostHitCountBuffer.Free();
+			peakDensityBuffer.Free();
+			hostPeakDensityBuffer.Free();
+			paletteImage.Free();
+			hostPaletteBuffer.Free();
+		}
+		
+		public bool IsAllocated()
+		{
+			return outputBufferID != 0;
+		}
+		
+		public void Allocate(int xRes, int yRes, UInt32 outputBufferID)
+		{
+			Deallocate();
+			this.xRes = xRes;
+			this.yRes = yRes;
+			this.outputBufferID = outputBufferID;
+
+			xRasterBlockCount = (xRes+RasterBlockSize-1)/RasterBlockSize;
+			yRasterBlockCount = (yRes+RasterBlockSize-1)/RasterBlockSize;
+
+			module.WriteConstant("xRes", xRes);
+			module.WriteConstant("yRes", yRes);
+			
+			accumXBuffer = DeviceBuffer.Alloc2D(4, xRes, yRes*4);
+			module.WriteConstant("accumXBuffer", accumXBuffer);
+			accumYBuffer = DeviceBuffer.Alloc2D(4, xRes, yRes*4);
+			module.WriteConstant("accumYBuffer", accumYBuffer);
+			accumABuffer = DeviceBuffer.Alloc2D(4, xRes, yRes*4);
+			module.WriteConstant("accumABuffer", accumABuffer);
+
+			//GL.GenBuffers(1, out outputBufferID);
+			//GL.BindBuffer(BufferTarget.PixelUnpackBuffer, outputBufferID);
+			//GL.BufferData(BufferTarget.PixelUnpackBuffer, (IntPtr)(4*xRes*yRes), IntPtr.Zero, BufferUsageHint.StreamCopy);
+			//GL.BindBuffer(BufferTarget.PixelUnpackBuffer, 0);
+			
+			context.GLRegisterBufferObject(outputBufferID);
+			
+			resetOutputKernel.SetBlockShape(RasterBlockSize,RasterBlockSize,1);
+			resetOutputKernel.SetGridDim(xRasterBlockCount,yRasterBlockCount);
+			resetOutputKernel.SetSharedSize(0);
+
+			updateOutputKernel.SetBlockShape(RasterBlockSize,RasterBlockSize,1);
+			updateOutputKernel.SetGridDim(xRasterBlockCount,yRasterBlockCount);
+			updateOutputKernel.SetSharedSize(0);
+
+			toneMapDirty = geometryDirty = true;
+		}
+		
+		public void Deallocate()
+		{
+			this.xRes = 0;
+			this.yRes = 0;
+			
+			accumXBuffer.Free();
+			accumYBuffer.Free();
+			accumABuffer.Free();
+			if(outputBufferID != 0){
+				context.GLUnregisterBufferObject(outputBufferID);
+				outputBufferID = 0;
+			}
+		}
+
+		public void SetPalette(Image srcImg)
+		{
+			Bitmap paletteBmp = new Bitmap(srcImg, new Size(256,256));
+			Color col;
+			
+			unsafe
+			{
+				float* rowPtr;
+				float* pixPtr;
+				for(int y = 0; y < paletteBmp.Height; y++)
+				{
+					rowPtr = (float*)((byte*)hostPaletteBuffer.Ptr + hostPaletteBuffer.Pitch*y);
+					for(int x = 0; x < paletteBmp.Width; x++)
+					{
+						pixPtr = (float*)((byte*)rowPtr + 4*sizeof(float)*x);
+						col = paletteBmp.GetPixel(x,y);
+						pixPtr[0] = (float)col.R / 255.0f;
+						pixPtr[1] = (float)col.G / 255.0f;
+						pixPtr[2] = (float)col.B / 255.0f;
+						pixPtr[3] = 1.0f;
+					}
+				}
+			}
+			
+			hostPaletteBuffer.CopyTo(paletteImage);
+			paletteTex.Array = paletteImage;
+			paletteTex.SetFormat(CudaArrayFormat.Float, 4);
+			paletteTex.AddressModeX = TexAddressMode.Clamp;
+			paletteTex.AddressModeY = TexAddressMode.Clamp;
+			paletteTex.FilterMode = TexFilterMode.Linear;
+			paletteTex.Flags = TexFlags.NormalizedCoordinates;
+
+			updateOutputKernel.SetTexRef(paletteTex);
+		}
+				
+		public void UpdateFractalParams()
+		{
+			if(fractal == null) return;
+			
+			float invAspectRatio = (XRes > 0) ? ((float)YRes / (float)XRes) : 0.0f;
+			Affine2D viewTransform = fractal.CameraTransform.Inverse;
+			Affine2D projTransform = new Affine2D(invAspectRatio, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+			float xHalf = (float)XRes / 2.0f;
+			float yHalf = (float)YRes / 2.0f;
+
+			Affine2D screenTransform = new Affine2D(xHalf, 0.0f, 0.0f, yHalf, xHalf, yHalf);
+
+			Affine2D vpsTransform = screenTransform * projTransform * viewTransform;
+			module.WriteConstant("vpsTransform", vpsTransform);
+
+			module.WriteConstant("brightness", fractal.Brightness);
+			
+			float invGamma = 1.0f / fractal.Gamma;
+			module.WriteConstant("invGamma", invGamma);
+
+			Int32 branchCount = Math.Min(MaxBranches, fractal.Branches.Count);
+			module.WriteConstant("branchCount", branchCount);
+
+			Affine2D[] branchTransforms = new Affine2D[MaxBranches];				
+			Vec2[] branchColors = new Vec2[MaxBranches];
+
+			float[] branchFactors = new float[MaxBranches * MaxFactors];
+			UInt32[] branchNormWeights = new UInt32[MaxBranches];
+			branchNormWeights.AssignAll( (i)=>(UInt32)0x00010000 );
+			
+			float branchWeightSum = 0.0f;
+			for(int bi = 0; bi < branchCount; bi++)
+				branchWeightSum += fractal.Branches[bi].Weight;
+
+			float[] branchColorWeights = new float[MaxBranches];
+
+			UInt32 runningSum = 0;
+			for(int bi = 0; bi < branchCount; bi++)
+			{
+				branchTransforms[bi] = fractal.Branches[bi].Transform;
+				branchColors[bi] = fractal.Branches[bi].Color;
+
+				runningSum += (UInt32)(fractal.Branches[bi].Weight / branchWeightSum * 65536.0f);
+				if(bi < branchCount-1)
+					branchNormWeights[bi] = runningSum;
+				else
+					branchNormWeights[bi] = 0x00010000;
+
+				branchColorWeights[bi] = fractal.Branches[bi].ColorWeight;
+
+				Int32 factorCount = Math.Min(MaxFactors, fractal.Branches[bi].Factors.Length);
+				for(int fi = 0; fi < FractalManager.FactorCount; fi++)
+				{
+					branchFactors[MaxFactors*bi + fi] = fractal.Branches[bi].Factors[fi];
+				}
+
+			}
+
+			module.WriteConstant("branchTransforms", branchTransforms);
+			module.WriteConstant("branchColors", branchColors);
+			module.WriteConstant("branchNormWeights", branchNormWeights);
+			module.WriteConstant("branchColorWeights", branchColorWeights);
+			module.WriteConstant("branchFactors", branchFactors);
+		}
+
+		private void Reset()
+		{
+			if(!IsAllocated()) return;
+			
+			iterateCallCount = 0;
+			totalHitCount = 0;
+			totalIterationCount = 0;
+
+			context.Synchronize();
+			resetClock.Start();
+			resetIteratorsKernel.Launch();
+			DeviceBuffer ptr = DeviceBuffer.GLMapBufferObject(outputBufferID);
+			resetOutputKernel.Launch(ptr);
+			ptr.GLUnmapBufferObject(outputBufferID);
+			context.Synchronize();
+			resetClock.Stop();
+		}
+		
+		public void Iterate(int iterCountPerThread)
+		{
+			if(fractal == null) return;
+			if(!IsAllocated()) return;
+
+			if(!masterClock.IsRunning)
+				masterClock.Start();
+			totalClock.Start();
+
+			if(paletteDirty)
+			{
+				SetPalette(Fractal.Palette);
+				paletteDirty = false;
+			}
+
+			if(geometryDirty || toneMapDirty)
+			{
+				UpdateFractalParams();
+				toneMapDirty = false;
+			}
+			if(geometryDirty)
+			{
+				Reset();
+				geometryDirty = false;
+			}
+
+			context.Synchronize();
+			iterClock.Start();
+			iterateKernel.Launch((uint)iterCountPerThread);
+			context.Synchronize();
+			iterClock.Stop();
+
+			int numIterations = iterCountPerThread*IteratorCount;
+			totalIterationCount += (UInt64)numIterations;
+			masterIterationCount += (UInt32)numIterations;
+
+			memClock.Start();
+			totalHitCount = 0;
+			peakDensity = 0.0f;
+			int i;
+			hostHitCountBuffer.ReadFrom(hitCountBuffer);
+			hostPeakDensityBuffer.ReadFrom(peakDensityBuffer);
+			context.Synchronize();
+			unsafe
+			{
+				UInt32* hitCounts = (UInt32*)hostHitCountBuffer.Ptr;
+				for(i = 0; i < IteratorCount; i++)
+					totalHitCount += (UInt64)(hitCounts[i]);
+
+				float* peaks = (float*)hostPeakDensityBuffer.Ptr;
+				for(i = 0; i < IteratorCount; i++)
+					peakDensity = Math.Max(peakDensity, peaks[i]);
+			}
+			context.Synchronize();
+			memClock.Stop();
+
+			float fDensity;
+			if(totalHitCount <= 0)
+				fDensity = 0.00000001f;
+			else
+				fDensity = (float)totalHitCount / (float)(xRes*yRes);
+
+			context.Synchronize();
+			toneClock.Start();
+			DeviceBuffer ptr = DeviceBuffer.GLMapBufferObject(outputBufferID);
+			updateOutputKernel.Launch(ptr, fDensity, peakDensity);
+			ptr.GLUnmapBufferObject(outputBufferID);
+			context.Synchronize();
+			toneClock.Stop();
+			totalClock.Stop();
+			iterateCallCount++;
+			statIterateCallCount++;
+		}
+
+		public void ResetPerformanceStats()
+		{
+			masterIterationCount = 0;
+			statIterateCallCount = 0;
+			totalClock.Reset();
+			resetClock.Reset();
+			iterClock.Reset();
+			memClock.Reset();
+			toneClock.Reset();
+			masterClock.Stop();
+			masterClock.Reset();
+			masterClock.Start();
+		}
+
+		public string GetPerformanceMessage()
+		{
+			StringWriter s = new StringWriter();
+			double ms;
+
+			double ipct = 100.0 * (double)iterClock.Elapsed.TotalMilliseconds / (double)masterClock.Elapsed.TotalMilliseconds;
+			s.Write("ipct: {0:00.00}% | ", ipct);
+
+			double mips = (double)masterIterationCount / (double)masterClock.ElapsedMilliseconds / 1000.0;
+			s.Write("mips: {0:000} | ", mips);
+			
+			double icps = (double)statIterateCallCount / (double)masterClock.ElapsedMilliseconds * 1000.0;
+			s.Write("icps: {0:000} | ", icps);
+
+			ms = totalClock.Elapsed.TotalMilliseconds / (double)statIterateCallCount;
+			s.Write("total: {0:00.000}ms | ", ms);
+			ms = iterClock.Elapsed.TotalMilliseconds / (double)statIterateCallCount;
+			s.Write("iter: {0:00.000}ms | ", ms);
+			ms = memClock.Elapsed.TotalMilliseconds / (double)statIterateCallCount;
+			s.Write("mem: {0:00.000}ms | ", ms);
+			ms = toneClock.Elapsed.TotalMilliseconds / (double)statIterateCallCount;
+			s.Write("tone: {0:00.000}ms | ", ms);
+
+			return s.ToString();
+		}
+
+	}
+}

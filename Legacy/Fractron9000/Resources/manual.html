@@ -1,0 +1,188 @@
+﻿<html>
+<head>
+<title>Fractron 9000 Guide</title>
+<style type="text/css">
+body{
+  color: #FFFFFF;
+  background-color: #000000;
+  font-family: Sans-serif;
+}
+a:link,a:active,a:hover{
+  color: #80C0FF;
+}
+a:visited{
+  color: #4080C0;
+}
+
+a img{
+  border-style: none;
+}
+
+ul, p{
+  margin: 0.2em 0.0em 0.5em 0.0em;
+}
+
+h2{
+  margin: 0.0em 0.0em 0.0em 0.0em;
+  padding: 0.0em 0.0em 0.0em 0.0em;
+}
+
+#heading{
+  width: 100%;
+  margin: 0px;
+  padding: 0px;
+  border-spacing: 0px;
+  background-image: url('images/logobg_1x140.png');
+}
+#heading tr{
+  margin: 0px;
+  padding: 0px;
+}
+#heading td{
+  border-spacing: 0px;
+}
+
+#logo{
+  margin: 0px;
+  padding: 0px;
+}
+
+#contact{
+  padding: 0.5em 0.5em 0.5em 0.5em;
+  vertical-align: bottom;
+  text-align: right;
+}
+
+#container{
+  overflow: hidden;
+  width: 50em;
+  margin: 0 auto;
+  padding: 0em 0.0em;
+}
+
+
+#menubar{
+  clear: both;
+  overflow: hidden;
+  color: #80FFC0;
+  font-size: large;
+}
+.menu_item a:link, .menu_item a:active, .menu_item a:hover{
+  color: #80FFC0;
+}
+.menu_item a:visited{
+  color: #80FFC0;
+}
+
+.selected{
+  font-weight: bold;
+}
+
+#menubar td{
+  margin: 0.5em 0.0em 0.5em 0.0em;
+  border-style: none;
+  padding: 0.2em 0.5em 0.2em 0.5em;
+  color: #F0F0FF;
+}
+
+.section{
+  clear: both;
+  overflow: hidden;
+  margin: 0.5em 0.0em 0.5em 0.0em;
+  border-style: solid;
+  border-color: #0080FF;
+  border-width: 1px 1px 1px 1px;
+  padding: 0.5em 0.5em 1.2em 0.5em;
+  
+  color: #F0F0FF;
+  background-color: #203040;
+}
+
+
+.thumbs{
+  margin: 0 auto;
+}
+.thumbs img{
+  margin: 0.2em 0.2em 0.2em 0.2em;
+}
+
+
+.tleft{
+  text-align: left;
+}
+.tcenter{
+  text-align: center;
+}
+.tright{
+  text-align: right;
+}
+
+#footer{
+  overflow: hidden;
+  width: 100%;
+  height: 30px;
+}
+#footer td{
+  line-height: 30px;
+  vertical-align: middle;
+}
+#footer img{
+  vertical-align: middle;
+}
+</style>
+</head>
+<body>
+<div id="container">
+
+<h1>Fractron 9000 Guide</h1>
+<h4>Version 0.4 Beta</h4>
+<table id="menubar">
+  <tr>
+    <td class="menu_item"><a href="#getting_started">Getting Started</a></td>
+    <td class="menu_item"><a href="#fine_control">Fine Control</a></td>
+    <td class="menu_item"><a href="#compatibility">Compatibility</a></td>
+  </tr>
+</table>
+
+<div class="section">
+  <a name="getting_started"><h2>Getting Started</h2></a>
+  <p>
+When Fractron 9000 starts, you will see the current fractal in the main window. To pan the view, left click and drag.
+You can also use the middle mouse button to pan. To rotate and zoom, click and drag with the right mouse button. You
+can also zoom with the mouse wheel.
+  </p>
+  <p>
+You will also notice several L-shaped "widgets". These represent the branches of the fractal. Clicking and dragging on
+a widget's control point changes the shape of the associated branch. Clicking on a widget also selects it. When a widget
+is selected, additional options will be available in the "Variations" and "Color" panels on the lower left side of the
+screen.
+  </p>
+</div>
+
+<div class="section">
+   <a name="fine_control"><h2>Fine Control</h2></a>
+  <p>
+    There are a few keyboard modifiers you can hold while dragging widgets to fine tune their placement:
+  </p>
+  <table>
+    <tr><th class="tright">Ctrl + Drag</th><td>- Snap to grid</td></tr>
+    <tr><th class="tright">Alt + Drag Edge</th><td>- Skew the widget</td></tr>
+    <tr><th class="tright">Shift + Drag Edge</th><td>- Rotate without resizing</td></tr>
+
+    <tr><th class="tright">Shift + Drag Center</th><td>- Rotate the widget around (0,0)</td></tr>
+    <tr><th class="tright">Shift + Ctrl + Drag</th><td>- Rotate and snap to angle</td></tr>
+  </table>
+</div>
+
+
+<div class="section">
+  <a name="compatibility"><h2>Compatibility</h2></a>
+  <p>
+Fractron 9000 can now load and save .flame files used by other fractal flame renderers like Apophysis and Flam3. However:
+Fractron 9000 still does not support all of the variations and features found in other renderers. Because of this, it is a good
+idea to back up any .flame files created by other programs before editing them with Fractron 9000.
+  </p>
+</div>
+
+</body>
+</html>
