@@ -18,9 +18,7 @@
         }
     </style>
     <!-- trunk compiles the Rust WASM and injects the script tag here -->
-    <link data-trunk rel="rust"
-          data-cargo-manifest-path="crates/fractron9000/Cargo.toml"
-          data-wasm-opt="2" />
+    <link data-trunk rel="rust" data-target-name="fractron9000_lib" data-wasm-opt="2" />
 </head>
 <body>
     <canvas id="the_canvas_id"></canvas>

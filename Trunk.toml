@@ -1,3 +1,2 @@
-[build]
-# Required for workspace builds — tells trunk which package to compile.
-cargo_opts = ["--package", "fractron9000"]
+# Trunk must be run from the app crate directory, not the workspace root.
+# See crates/fractron9000/Trunk.toml and crates/fractron9000/index.html.

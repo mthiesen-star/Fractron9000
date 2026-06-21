@@ -1,0 +1,2 @@
+# Trunk build configuration for the fractron9000 WASM app.
+# Run trunk from this directory: cd crates/fractron9000 && trunk serve

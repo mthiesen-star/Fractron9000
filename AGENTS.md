@@ -110,7 +110,8 @@ glam = "0.29"
 # Native desktop
 cargo run -p fractron9000
 
-# Browser (WASM) — requires trunk
+# Browser (WASM) — requires trunk; must run from the app crate directory
+cd crates/fractron9000
 trunk serve               # dev server with hot reload
 trunk build --release     # production bundle → dist/
 ```
