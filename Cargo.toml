@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "crates/fractal-core",
+    "crates/fractron9000",
+]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = true        # link-time optimization — important for WASM bundle size

@@ -1,0 +1,3 @@
+[build]
+# Required for workspace builds — tells trunk which package to compile.
+cargo_opts = ["--package", "fractron9000"]
