@@ -80,9 +80,10 @@ impl GpuRenderer {
             source: ShaderSource::Wgsl(std::borrow::Cow::Owned(iterate_code)),
         });
         
+        let tonemap_code = format!("{}\n{}", branch_common, tonemap_src);
         let tonemap_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("tonemap_kernel"),
-            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(tonemap_src)),
+            source: ShaderSource::Wgsl(std::borrow::Cow::Owned(tonemap_code)),
         });
         
         // Build GPU buffer data from Rust structures
@@ -253,6 +254,16 @@ impl GpuRenderer {
                 BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
                         format: TextureFormat::Rgba8Unorm,
@@ -269,7 +280,8 @@ impl GpuRenderer {
             entries: &[
                 BindGroupEntry { binding: 0, resource: flame_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 1, resource: histogram_buffer.as_entire_binding() },
-                BindGroupEntry { binding: 2, resource: BindingResource::TextureView(&output_texture_view) },
+                BindGroupEntry { binding: 2, resource: branches_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&output_texture_view) },
             ],
         });
         

@@ -1,14 +1,11 @@
 // Fractron 9000 - Tonemap Kernel
 // Converts raw histogram hits to tone-mapped RGBA texture with log scaling, gamma, vibrancy
-
-struct Affine {
-    row0: vec4<f32>,
-    row1: vec4<f32>,
-}
+// (Affine struct and read_flame() provided by branch_common.wgsl)
 
 @group(0) @binding(0) var<storage, read> flame_data: array<f32>;
 @group(0) @binding(1) var<storage, read> histogram: array<u32>;
-@group(0) @binding(2) var output_texture: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(2) var<storage, read> branch_data: array<f32>;  // Needed by branch_common, not used by tonemap
+@group(0) @binding(3) var output_texture: texture_storage_2d<rgba8unorm, write>;
 
 const HIST_WIDTH: u32 = 1024u;
 const HIST_HEIGHT: u32 = 768u;
