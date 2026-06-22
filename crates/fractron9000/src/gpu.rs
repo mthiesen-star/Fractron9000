@@ -126,7 +126,8 @@ impl GpuRenderer {
         
         let histogram_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("histogram_ssbo"),
-            size: (HIST_WIDTH * HIST_HEIGHT * 4) as u64,
+            // 4 u32s per pixel: R, G, B, count (total 16 bytes per pixel)
+            size: (HIST_WIDTH * HIST_HEIGHT * 16) as u64,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: true,
         });
@@ -315,8 +316,8 @@ impl GpuRenderer {
     }
     
     pub fn iterate(&self, queue: &Queue, device: &Device, num_threads: u32) {
-        // Clear histogram to zeros for this frame
-        queue.write_buffer(&self.histogram_buffer, 0, &vec![0u8; (HIST_WIDTH * HIST_HEIGHT * 4) as usize]);
+        // Clear histogram to zeros for this frame (4 u32s per pixel: R, G, B, count)
+        queue.write_buffer(&self.histogram_buffer, 0, &vec![0u8; (HIST_WIDTH * HIST_HEIGHT * 16) as usize]);
         
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("iterate_encoder"),

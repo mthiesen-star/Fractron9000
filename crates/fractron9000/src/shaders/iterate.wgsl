@@ -28,6 +28,44 @@ const MAX_ITERATIONS_PER_THREAD: u32 = 1000u;
 // UTILITY FUNCTIONS
 // ============================================================================
 
+/// Convert chroma (u, v) in [0, 1]² to RGB using HSV-based mapping.
+/// This maps branch chroma values to distinct colors suitable for fractal visualization.
+fn chroma_to_rgb(chroma: vec2<f32>) -> vec3<f32> {
+    // Treat chroma as HSV coordinates
+    // u (x) -> hue (0-1 mapped to 0-360 degrees, 6 sectors)
+    // v (y) -> saturation (0-1)
+    // Value/brightness = 1
+    
+    let hue = chroma.x * 6.0;  // 0-6 for the 6 color sectors
+    let sat = chroma.y;        // 0-1 saturation
+    let val = 1.0;             // Full brightness
+    
+    let c = sat * val;
+    let h_rem = hue - floor(hue / 2.0) * 2.0;  // fmod(hue, 2.0)
+    let x = c * (1.0 - abs(h_rem - 1.0));
+    let m = val - c;
+    
+    var rgb = vec3<f32>(0.0);
+    
+    let h_int = i32(hue);
+    switch(h_int) {
+        case 0: { rgb = vec3<f32>(c, x, 0.0); }
+        case 1: { rgb = vec3<f32>(x, c, 0.0); }
+        case 2: { rgb = vec3<f32>(0.0, c, x); }
+        case 3: { rgb = vec3<f32>(0.0, x, c); }
+        case 4: { rgb = vec3<f32>(x, 0.0, c); }
+        default: { rgb = vec3<f32>(c, 0.0, x); }
+    }
+    
+    return rgb + m;
+}
+
+/// Pack a float in [0, 1] into a u32 for accumulation (0-255 range).
+fn pack_color_channel(val: f32) -> u32 {
+    let clamped = clamp(val, 0.0, 1.0);
+    return u32(clamped * 255.0);
+}
+
 fn pcg_random(state: ptr<function, u32>) -> f32 {
     let x = *state;
     *state = x * 1664525u + 1013904223u;
@@ -299,13 +337,28 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             continue;
         }
         
-        // Direct histogram write: just use p (post-affine skipped)
-        let hist_x = u32(clamp((p.x + 0.6) * 800.0, 0.0, 1023.0));
-        let hist_y = u32(clamp((p.y + 0.6) * 600.0, 0.0, 767.0));
+        // Apply camera transform to convert world space to normalized screen space ([-1, 1])
+        let screen_pos = apply_affine(p, flame.camera_transform);
+        
+        // Map from normalized screen space [-1, 1] to pixel coordinates [0, HIST_WIDTH) × [0, HIST_HEIGHT)
+        // Note: Y-flip is handled by tonemap shader at display time, not here
+        let hist_x = u32(clamp((screen_pos.x + 1.0) * 0.5 * f32(HIST_WIDTH), 0.0, f32(HIST_WIDTH - 1u)));
+        let hist_y = u32(clamp((screen_pos.y + 1.0) * 0.5 * f32(HIST_HEIGHT), 0.0, f32(HIST_HEIGHT - 1u)));
         
         if hist_x < HIST_WIDTH && hist_y < HIST_HEIGHT {
-            let pixel_idx = hist_y * HIST_WIDTH + hist_x;
-            atomicAdd(&histogram[pixel_idx], 50u);
+            let pixel_idx_base = (hist_y * HIST_WIDTH + hist_x) * 4u;
+            
+            // Convert chroma to RGB and accumulate
+            let rgb = chroma_to_rgb(color);
+            let r_packed = pack_color_channel(rgb.x);
+            let g_packed = pack_color_channel(rgb.y);
+            let b_packed = pack_color_channel(rgb.z);
+            
+            // Accumulate R, G, B, and hit count to separate u32 channels
+            atomicAdd(&histogram[pixel_idx_base + 0u], r_packed);
+            atomicAdd(&histogram[pixel_idx_base + 1u], g_packed);
+            atomicAdd(&histogram[pixel_idx_base + 2u], b_packed);
+            atomicAdd(&histogram[pixel_idx_base + 3u], 1u);
         }
     }
 }

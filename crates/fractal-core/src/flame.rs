@@ -150,44 +150,60 @@ impl Flame {
     }
 
     /// Create a simple test/demo flame (Sierpinski triangle).
+    /// Matches the Legacy Fractron9000 sierpinski.flame definition exactly.
     pub fn demo() -> Self {
         let mut flame = Flame::default();
 
-        // Sierpinski-like pattern: three half-scale branches at different positions
+        // Sierpinski triangle - 3 half-scale branches
+        // Matches: Legacy/def_fractals/Sample Fractals.flame sierpinski definition
         flame.branches.clear();
 
-        // Branch 1: top center
-        let b1 = Branch::default()
+        // Branch 0: bottom right, chroma=(1, 0.5) -> RED
+        let b0 = Branch::default()
             .with_pre_affine(Mat3::from_cols(
-                glam::Vec3::new(0.5, 0.0, 0.0),    // x_axis: [a, c, 0]
-                glam::Vec3::new(0.0, 0.5, 0.0),    // y_axis: [b, d, 0]
-                glam::Vec3::new(0.0, 0.25, 1.0),   // z_axis: [e, f, 1] - translation to (0, 0.25)
+                glam::Vec3::new(0.5, 0.0, 0.0),
+                glam::Vec3::new(0.0, 0.5, 0.0),
+                glam::Vec3::new(0.433, -0.25, 1.0),   // translation: (0.433, -0.25)
             ))
             .with_chroma(Vec2::new(1.0, 0.5))
             .with_weight(1.0);
-        flame.branches.push(b1);
+        flame.branches.push(b0);
 
-        // Branch 2: bottom left
-        let b2 = Branch::default()
+        // Branch 1: bottom left, chroma=(0.25, 0.9) -> CYAN
+        let b1 = Branch::default()
             .with_pre_affine(Mat3::from_cols(
-                glam::Vec3::new(0.5, 0.0, 0.0),      // x_axis
-                glam::Vec3::new(0.0, 0.5, 0.0),      // y_axis
-                glam::Vec3::new(-0.433, -0.25, 1.0), // z_axis: translation to (-0.433, -0.25)
+                glam::Vec3::new(0.5, 0.0, 0.0),
+                glam::Vec3::new(0.0, 0.5, 0.0),
+                glam::Vec3::new(-0.433, -0.25, 1.0),  // translation: (-0.433, -0.25)
             ))
             .with_chroma(Vec2::new(0.25, 0.9))
             .with_weight(1.0);
-        flame.branches.push(b2);
+        flame.branches.push(b1);
 
-        // Branch 3: bottom right
-        let b3 = Branch::default()
+        // Branch 2: top center, chroma=(0.25, 0.1) -> ORANGE/BROWN
+        let b2 = Branch::default()
             .with_pre_affine(Mat3::from_cols(
-                glam::Vec3::new(0.5, 0.0, 0.0),     // x_axis
-                glam::Vec3::new(0.0, 0.5, 0.0),     // y_axis
-                glam::Vec3::new(0.433, -0.25, 1.0), // z_axis: translation to (0.433, -0.25)
+                glam::Vec3::new(0.5, 0.0, 0.0),
+                glam::Vec3::new(0.0, 0.5, 0.0),
+                glam::Vec3::new(0.0, 0.5, 1.0),       // translation: (0, 0.5)
             ))
             .with_chroma(Vec2::new(0.25, 0.1))
             .with_weight(1.0);
-        flame.branches.push(b3);
+        flame.branches.push(b2);
+
+        // Camera: scale 0.9 to fit nicely. Legacy uses scale=150 which is different
+        // but we normalize to [-1, 1] screen space.
+        flame.camera_transform = Mat3::from_cols(
+            glam::Vec3::new(0.9, 0.0, 0.0),    // x_axis: scale x by 0.9
+            glam::Vec3::new(0.0, 0.9, 0.0),    // y_axis: scale y by 0.9
+            glam::Vec3::new(0.0, 0.0, 1.0),    // z_axis: no translation
+        );
+
+        // Tone mapping params match Legacy sierpinski definition:
+        // brightness=1, gamma=2, vibrancy=1
+        flame.brightness = 1.0;
+        flame.gamma = 2.0;
+        flame.vibrancy = 1.0;
 
         flame
     }

@@ -12,10 +12,15 @@ const HIST_HEIGHT: u32 = 768u;
 const PIXEL_AREA: f32 = 1.0;
 const C1: f32 = 1.0;
 
-fn tone_map(raw: u32, flame_params: vec3<f32>, total_iterations: u32) -> vec3<f32> {
-    let raw_f = f32(raw);
-    
-    if raw_f < 1.0 {
+const TONE_C1: f32 = 0.5;
+
+/// Log base 10
+fn log_b10(x: f32) -> f32 {
+    return log(x) / 2.30258509;
+}
+
+fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_iterations: u32) -> vec3<f32> {
+    if count < 0.5 {
         return vec3<f32>(0.0);
     }
     
@@ -23,30 +28,43 @@ fn tone_map(raw: u32, flame_params: vec3<f32>, total_iterations: u32) -> vec3<f3
     let gamma = flame_params.y;
     let vibrancy = flame_params.z;
     
-    // Scale hit count by brightness and iteration count
-    // Lower scale = darker, needs more hits to brighten
-    let scale = brightness / (f32(total_iterations) + 1e-6);
-    let scaled = raw_f * scale;
+    // Legacy tone mapping: apply log scale to hit count to get pixel intensity
+    let scale_constant = 1.0 / (f32(total_iterations) + 1e-6);
     
-    // Log scale for better dynamic range
-    let log_val = log(scaled + 1.0);
+    // Compute the log-intensity for this pixel based on hit count
+    let log_a = TONE_C1 * brightness * log_b10(1.0 + count * scale_constant);
+    
+    // Normalize colors by dividing RGB by count (average color per hit)
+    let r_avg = r / (count + 1e-6);
+    let g_avg = g / (count + 1e-6);
+    let b_avg = b / (count + 1e-6);
+    
+    // Apply the log intensity to each channel
+    let log_r = log_a * r_avg;
+    let log_g = log_a * g_avg;
+    let log_b_val = log_a * b_avg;
     
     // Apply gamma correction
-    let gamma_corrected = pow(log_val, 1.0 / gamma);
+    let inv_gamma = 1.0 / gamma;
+    let z = pow(log_a, inv_gamma);
+    let gamma_factor = z / (log_a + 1e-6);
     
-    // Apply vibrancy (saturation boost)
-    let with_vibrancy = mix(gamma_corrected, gamma_corrected * 1.5, vibrancy);
+    // Apply vibrancy (blend between pure gamma-corrected and scaled color)
+    let result_r = clamp(mix(pow(log_r, inv_gamma), gamma_factor * log_r, vibrancy), 0.0, 1.0);
+    let result_g = clamp(mix(pow(log_g, inv_gamma), gamma_factor * log_g, vibrancy), 0.0, 1.0);
+    let result_b = clamp(mix(pow(log_b_val, inv_gamma), gamma_factor * log_b_val, vibrancy), 0.0, 1.0);
     
-    // Use a blue-shifted color palette (Apophysis style)
-    // Vary RGB based on hit intensity
-    let color = vec3<f32>(
-        sin(with_vibrancy * 3.14159 * 0.5),                   // Red channel
-        sin(with_vibrancy * 3.14159 * 0.5 + 2.0) * 0.7,       // Green channel
-        sin(with_vibrancy * 3.14159 * 0.5 + 4.0) * 1.0        // Blue channel
-    );
-    
-    return clamp(color * with_vibrancy, vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec3<f32>(result_r, result_g, result_b);
 }
+
+// Debug version of tone map. Each pixel is either ON if count >= 0.5 or off otherwise
+fn tone_map_binary_debug(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_iterations: u32) -> vec3<f32> {
+    if count < 0.5 {
+        return vec3<f32>(0.0);
+    }
+    return vec3<f32>(1.0);
+}
+
 
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -57,19 +75,35 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     
-    let pixel_idx = pixel_y * HIST_WIDTH + pixel_x;
-    let hit_count = histogram[pixel_idx];
+    // Flip Y for wgpu (top-left origin, Y increases downward) vs OpenGL (Y increases upward)
+    // Raw histogram is stored in OpenGL-style coordinates, so we flip when reading
+    let hist_y_flipped = HIST_HEIGHT - 1u - pixel_y;
+    let pixel_idx_base = (hist_y_flipped * HIST_WIDTH + pixel_x) * 4u;
+    
+    // Read accumulated R, G, B, count from histogram (4 u32s per pixel)
+    var r_accum = f32(histogram[pixel_idx_base + 0u]);
+    var g_accum = f32(histogram[pixel_idx_base + 1u]);
+    var b_accum = f32(histogram[pixel_idx_base + 2u]);
+    var count_accum = f32(histogram[pixel_idx_base + 3u]);
+    
+    // Apply upscaling factor to raw accumulated values (like Legacy does)
+    // This expands the range to work well with the tone mapping formula
+    let up_scale_factor = 4.0;
+    r_accum *= up_scale_factor;
+    g_accum *= up_scale_factor;
+    b_accum *= up_scale_factor;
+    count_accum *= up_scale_factor;
     
     // Read flame parameters from flat array
     let flame = read_flame();
     
     // Apply tone mapping
     let flame_params = vec3<f32>(flame.brightness, flame.gamma, flame.vibrancy);
-    let mapped = tone_map(hit_count, flame_params, flame.total_iterations);
+    let mapped = tone_map(r_accum, g_accum, b_accum, count_accum, flame_params, flame.total_iterations);
     
     // Blend with background
     let bg = flame.background.xyz;
-    let final_color = mix(bg, mapped, f32(hit_count > 0u));
+    let final_color = mix(bg, mapped, f32(count_accum > 0.5));
     
     textureStore(output_texture, vec2<i32>(i32(pixel_x), i32(pixel_y)), vec4<f32>(final_color, 1.0));
 }
