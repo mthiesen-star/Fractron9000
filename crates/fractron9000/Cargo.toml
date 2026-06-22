@@ -16,6 +16,8 @@ eframe = { version = "0.29", features = ["wgpu"] }
 egui = "0.29"
 wgpu = "22"
 glam = "0.29"
+bytemuck = { version = "1.14", features = ["derive"] }
+pollster = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
