@@ -4,7 +4,6 @@ use wgpu::*;
 use wgpu::util::DeviceExt;
 use glam::Mat3;
 use fractal_core::flame::Flame;
-use std::num::NonZeroU32;
 
 // ============================================================================
 // GPU BUFFER STRUCTURES (matching WGSL)
@@ -12,6 +11,7 @@ use std::num::NonZeroU32;
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+/// GPU-friendly affine transform: row-major layout
 pub struct GpuAffine {
     pub row0: [f32; 4],
     pub row1: [f32; 4],
@@ -39,7 +39,7 @@ pub struct GpuBranch {
     pub color_weight: f32,
     pub var_count: u32,
     pub var_offset: u32,
-    pub _padding: u32,
+    pub _padding: [u32; 6],  // Pad to 112 bytes (16-byte alignment for std430 array stride)
 }
 
 #[repr(C)]
@@ -59,6 +59,8 @@ pub struct GpuFlame {
     pub total_iterations: u32,
     pub _padding: [u32; 2],
 }
+
+
 
 const HIST_WIDTH: u32 = 1024;
 const HIST_HEIGHT: u32 = 768;
@@ -90,20 +92,38 @@ pub struct GpuRenderer {
 impl GpuRenderer {
     /// Initialize GPU renderer (must be called with initialized wgpu device/queue)
     pub async fn new(device: &Device, _queue: &Queue, flame: &Flame) -> Result<Self, String> {
-        // Compile shaders
+        // Compile shaders with shared branch_common utilities concatenated
+        let branch_common = include_str!("shaders/branch_common.wgsl");
+        let iterate_src = include_str!("shaders/iterate.wgsl");
+        let tonemap_src = include_str!("shaders/tonemap.wgsl");
+        
+        // Concatenate: common utilities first, then individual shader
+        let iterate_code = format!("{}\n{}", branch_common, iterate_src);
+        
         let iterate_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("iterate_kernel"),
-            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("shaders/iterate.wgsl"))),
+            source: ShaderSource::Wgsl(std::borrow::Cow::Owned(iterate_code)),
         });
         
         let tonemap_module = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("tonemap_kernel"),
-            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!("shaders/tonemap.wgsl"))),
+            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(tonemap_src)),
         });
         
         // Build GPU buffer data from Rust structures
         let gpu_flame = Self::flame_to_gpu(flame);
         let (gpu_branches, gpu_variations) = Self::flame_to_gpu_branches(flame);
+        
+        // DEBUG: Print struct sizes
+        eprintln!("\n=== BUFFER LAYOUT DIAGNOSTICS ===");
+        eprintln!("GpuAffine size: {} bytes", std::mem::size_of::<GpuAffine>());
+        eprintln!("GpuBranch size: {} bytes", std::mem::size_of::<GpuBranch>());
+        eprintln!("GpuVariEntry size: {} bytes", std::mem::size_of::<GpuVariEntry>());
+        eprintln!("GpuFlame size: {} bytes", std::mem::size_of::<GpuFlame>());
+        eprintln!();
+        eprintln!("gpu_branches.len() = {} (f32 elements, 18 per branch = {} branches)", 
+                 gpu_branches.len(), gpu_branches.len() / 18);
+        eprintln!("Buffer size = {} bytes", gpu_branches.len() * 4);
         
         // Create buffers
         let flame_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
@@ -287,6 +307,8 @@ impl GpuRenderer {
             compilation_options: Default::default(),
         });
         
+
+        
         Ok(Self {
             iterate_pipeline,
             tonemap_pipeline,
@@ -339,6 +361,8 @@ impl GpuRenderer {
         
         queue.submit(std::iter::once(encoder.finish()));
     }
+    
+
     
     pub fn output_texture(&self) -> &Texture {
         &self.output_texture
@@ -457,11 +481,11 @@ impl GpuRenderer {
         result
     }
     
-    fn flame_to_gpu_branches(flame: &Flame) -> (Vec<GpuBranch>, Vec<GpuVariEntry>) {
-        let mut gpu_branches = Vec::new();
+    fn flame_to_gpu_branches(flame: &Flame) -> (Vec<f32>, Vec<GpuVariEntry>) {
+        let mut branch_data = Vec::new();  // Flat array of f32
         let mut gpu_variations = Vec::new();
         
-        eprintln!("Converting {} branches to GPU format", flame.branches.len());
+        eprintln!("Converting {} branches to GPU format (flat array)", flame.branches.len());
         
         for (idx, branch) in flame.branches.iter().enumerate() {
             let var_offset = gpu_variations.len() as u32;
@@ -490,21 +514,48 @@ impl GpuRenderer {
             eprintln!("    weight={}, color_weight={}", branch.weight, branch.color_weight);
             eprintln!("    var_count={}, var_offset={}", var_count, var_offset);
             
-            gpu_branches.push(GpuBranch {
-                pre_affine: pre_affine_gpu,
-                post_affine: post_affine_gpu,
-                chroma: [branch.chroma.x, branch.chroma.y],
-                weight: branch.weight,
-                color_weight: branch.color_weight,
-                var_count,
-                var_offset,
-                _padding: 0,
-            });
+            // Pack branch into flat array: 18 f32 elements per branch
+            // [0-2]: pre_affine row0 (a, b, e)
+            // [3-5]: pre_affine row1 (c, d, f)
+            // [6-8]: post_affine row0 (a, b, e)
+            // [9-11]: post_affine row1 (c, d, f)
+            // [12-13]: chroma (x, y)
+            // [14]: weight
+            // [15]: color_weight
+            // [16]: var_count (bitcast as f32)
+            // [17]: var_offset (bitcast as f32)
+            
+            branch_data.push(pre_affine_gpu.row0[0]);  // pre_affine.a
+            branch_data.push(pre_affine_gpu.row0[1]);  // pre_affine.b
+            branch_data.push(pre_affine_gpu.row0[2]);  // pre_affine.e
+            
+            branch_data.push(pre_affine_gpu.row1[0]);  // pre_affine.c
+            branch_data.push(pre_affine_gpu.row1[1]);  // pre_affine.d
+            branch_data.push(pre_affine_gpu.row1[2]);  // pre_affine.f
+            
+            branch_data.push(post_affine_gpu.row0[0]); // post_affine.a
+            branch_data.push(post_affine_gpu.row0[1]); // post_affine.b
+            branch_data.push(post_affine_gpu.row0[2]); // post_affine.e
+            
+            branch_data.push(post_affine_gpu.row1[0]); // post_affine.c
+            branch_data.push(post_affine_gpu.row1[1]); // post_affine.d
+            branch_data.push(post_affine_gpu.row1[2]); // post_affine.f
+            
+            branch_data.push(branch.chroma.x);
+            branch_data.push(branch.chroma.y);
+            
+            branch_data.push(branch.weight);
+            branch_data.push(branch.color_weight);
+            
+            // Bitcast u32 to f32
+            branch_data.push(f32::from_bits(var_count));
+            branch_data.push(f32::from_bits(var_offset));
         }
         
-        eprintln!("  Created {} GPU branches, {} total variations", gpu_branches.len(), gpu_variations.len());
+        eprintln!("  Created {} GPU branches ({} total f32s), {} total variations", 
+                 flame.branches.len(), branch_data.len(), gpu_variations.len());
         
-        (gpu_branches, gpu_variations)
+        (branch_data, gpu_variations)
     }
 }
 
@@ -597,5 +648,358 @@ mod tests {
         let norm_x = (world_pos_x + 2.0) / 4.0;  // (2 + 2) / 4 = 1.0
         let hist_x = (norm_x * 1024.0) as u32;
         assert_eq!(hist_x, 1024, "world_pos x=2.0 should map to pixel 1024");
+    }
+
+    // ====================================================================
+    // GPU SHADER TESTS (requires wgpu device)
+    // ====================================================================
+
+    /// Test shader that validates read_branch() and apply_affine() functions
+    /// Each test case writes a vec4 result to the results buffer
+    const GPU_TEST_SHADER: &str = r#"
+        @group(0) @binding(0) var<storage, read> branch_data: array<f32>;
+        @group(0) @binding(1) var<storage, read_write> results: array<vec4<f32>>;
+
+        @compute @workgroup_size(1)
+        fn main() {
+            var result_idx = 0u;
+            
+            // ============================================================
+            // TEST SUITE: branch_common.wgsl functions
+            // ============================================================
+            
+            // Test 1: read_branch(0) - Branch 0 pre_affine row0
+            var b0 = read_branch(0u);
+            results[result_idx] = vec4<f32>(
+                b0.pre_affine.row0.x,    // should be 0.5
+                b0.pre_affine.row0.y,    // should be 0.0
+                b0.pre_affine.row0.z,    // should be 0.0 (translation)
+                1.0
+            );
+            result_idx += 1u;
+            
+            // Test 2: read_branch(0) - Branch 0 post_affine row0
+            results[result_idx] = vec4<f32>(
+                b0.post_affine.row0.x,   // should be 1.0 (identity)
+                b0.post_affine.row0.y,   // should be 0.0
+                b0.post_affine.row0.z,   // should be 0.0
+                1.0
+            );
+            result_idx += 1u;
+            
+            // Test 3: read_branch(0) - Branch 0 chroma + weight
+            results[result_idx] = vec4<f32>(
+                b0.chroma.x,             // should be 0.0 (red channel)
+                b0.chroma.y,             // should be 0.0
+                b0.weight,               // should be 1.0/3
+                b0.color_weight          // should be 0.5
+            );
+            result_idx += 1u;
+            
+            // Test 4: read_branch(1) - Branch 1 pre_affine translation
+            var b1 = read_branch(1u);
+            results[result_idx] = vec4<f32>(
+                b1.pre_affine.row0.x,    // should be 0.5 (scale)
+                b1.pre_affine.row0.z,    // should be -0.5 (translation x)
+                b1.pre_affine.row1.z,    // should be -0.5 (translation y)
+                1.0
+            );
+            result_idx += 1u;
+            
+            // Test 5: read_branch(2) - Branch 2 pre_affine translation
+            var b2 = read_branch(2u);
+            results[result_idx] = vec4<f32>(
+                b2.pre_affine.row0.x,    // should be 0.5
+                b2.pre_affine.row0.z,    // should be 0.5 (translation x)
+                b2.pre_affine.row1.z,    // should be -0.5 (translation y)
+                1.0
+            );
+            result_idx += 1u;
+            
+            // Test 6: apply_affine identity transform
+            let identity = Affine(
+                vec4<f32>(1.0, 0.0, 0.0, 0.0),
+                vec4<f32>(0.0, 1.0, 0.0, 0.0)
+            );
+            let p1 = apply_affine(vec2<f32>(2.0, 3.0), identity);
+            results[result_idx] = vec4<f32>(p1.x, p1.y, 0.0, 1.0);  // should be (2.0, 3.0)
+            result_idx += 1u;
+            
+            // Test 7: apply_affine with translation
+            let translate = Affine(
+                vec4<f32>(1.0, 0.0, 5.0, 0.0),  // [1, 0, 5]
+                vec4<f32>(0.0, 1.0, -2.0, 0.0)  // [0, 1, -2]
+            );
+            let p2 = apply_affine(vec2<f32>(1.0, 1.0), translate);
+            results[result_idx] = vec4<f32>(p2.x, p2.y, 0.0, 1.0);  // should be (6.0, -1.0)
+            result_idx += 1u;
+            
+            // Test 8: apply_affine with scale
+            let scale = Affine(
+                vec4<f32>(2.0, 0.0, 0.0, 0.0),  // [2, 0, 0]
+                vec4<f32>(0.0, 3.0, 0.0, 0.0)   // [0, 3, 0]
+            );
+            let p3 = apply_affine(vec2<f32>(1.0, 1.0), scale);
+            results[result_idx] = vec4<f32>(p3.x, p3.y, 0.0, 1.0);  // should be (2.0, 3.0)
+            result_idx += 1u;
+            
+            // Test 9: Branch 0 as Sierpinski corner (origin)
+            let sierpinski_p = vec2<f32>(0.0, 0.0);
+            let sierpinski_transformed = apply_affine(sierpinski_p, b0.pre_affine);
+            results[result_idx] = vec4<f32>(sierpinski_transformed.x, sierpinski_transformed.y, 0.0, 1.0);
+            // should be (0.0, 0.0) since scale(0.5) at origin = origin
+            result_idx += 1u;
+        }
+    "#;
+
+    #[tokio::test]
+    async fn test_branch_common_gpu() {
+        // Initialize wgpu with headless backend
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            flags: wgpu::InstanceFlags::empty(),
+            dx12_shader_compiler: wgpu::Dx12Compiler::default(),
+            gles_minor_version: wgpu::Gles3MinorVersion::default(),
+        });
+
+        let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: None,
+            force_fallback_adapter: false,
+        })) {
+            Some(adapter) => adapter,
+            None => panic!("No suitable GPU adapter found for testing"),
+        };
+
+        let (device, queue) = match pollster::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                label: Some("test_device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::downlevel_defaults(),
+                memory_hints: wgpu::MemoryHints::default(),
+            },
+            None,
+        )) {
+            Ok((device, queue)) => (device, queue),
+            Err(e) => panic!("Failed to create device: {}", e),
+        };
+
+        // Create a real Sierpinski flame and pack it using the actual renderer code
+        let flame = Flame::demo();
+        let (branch_data, _gpu_variations) = GpuRenderer::flame_to_gpu_branches(&flame);
+        
+        eprintln!("\n=== TEST: Using real Sierpinski flame + packing ===");
+        eprintln!("Flame has {} branches, packed to {} f32 elements", 
+                 flame.branches.len(), branch_data.len());
+
+        // Create GPU buffers
+        let branch_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("test_branch_data"),
+            contents: bytemuck::cast_slice(&branch_data),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+
+        // Results buffer: 10 test cases × vec4
+        let results_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("test_results"),
+            size: (10 * 16) as u64, // 10 × vec4<f32> = 10 × 16 bytes
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: true,
+        });
+
+        {
+            let mut mapping = results_buffer.slice(..).get_mapped_range_mut();
+            mapping.fill(0u8);
+        }
+        results_buffer.unmap();
+
+        // Staging buffer to read back results
+        let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("test_staging"),
+            size: (10 * 16) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        // Create shader module with branch_common concatenated
+        let branch_common = include_str!("shaders/branch_common.wgsl");
+        let full_shader = format!("{}\n{}", branch_common, GPU_TEST_SHADER);
+        
+        device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("gpu_test_shader"),
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Owned(full_shader)),
+        });
+        
+        if let Some(error) = pollster::block_on(device.pop_error_scope()) {
+            panic!("Shader compilation error: {:?}", error);
+        }
+
+        // Create bind group layout
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("test_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("test_bind_group"),
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: branch_data_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: results_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("test_pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("test_compute_pipeline"),
+            layout: Some(&pipeline_layout),
+            module: &shader_module,
+            entry_point: "main",
+            cache: None,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        });
+
+        // Run the compute shader
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("test_encoder"),
+        });
+
+        {
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("test_compute_pass"),
+                timestamp_writes: None,
+            });
+            cpass.set_pipeline(&compute_pipeline);
+            cpass.set_bind_group(0, &bind_group, &[]);
+            cpass.dispatch_workgroups(1, 1, 1);
+        }
+
+        encoder.copy_buffer_to_buffer(&results_buffer, 0, &staging_buffer, 0, (10 * 16) as u64);
+        queue.submit(std::iter::once(encoder.finish()));
+
+        // Map staging buffer and read results
+        let buffer_slice = staging_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx.send(result).ok();
+        });
+        device.poll(wgpu::Maintain::Wait);
+
+        rx.recv().expect("failed to map buffer").expect("buffer mapping failed");
+
+        let data = buffer_slice.get_mapped_range();
+        let results: &[f32] = bytemuck::cast_slice(&data);
+
+        // Verify test results
+        eprintln!("\n=== GPU SHADER TEST RESULTS ===");
+        
+        // Extract expected values from the flame we packed
+        let b0 = &flame.branches[0];
+        let b1 = &flame.branches[1];
+        let b2 = &flame.branches[2];
+        
+        let b0_pre_gpu = GpuAffine::from_mat3(b0.pre_affine);
+        let b1_pre_gpu = GpuAffine::from_mat3(b1.pre_affine);
+        let b2_pre_gpu = GpuAffine::from_mat3(b2.pre_affine);
+        
+        // Test 1: Branch 0 pre_affine row0 (results at indices 0, 1, 2, 3)
+        eprintln!("Test 1: Branch 0 pre_affine.row0");
+        eprintln!("  GPU read: ({}, {}, {})", results[0], results[1], results[2]);
+        eprintln!("  Expected: ({}, {}, {})", b0_pre_gpu.row0[0], b0_pre_gpu.row0[1], b0_pre_gpu.row0[2]);
+        assert!((results[0] - b0_pre_gpu.row0[0]).abs() < 0.001, "Branch 0 pre_affine.row0.x mismatch");
+        assert!((results[1] - b0_pre_gpu.row0[1]).abs() < 0.001, "Branch 0 pre_affine.row0.y mismatch");
+        assert!((results[2] - b0_pre_gpu.row0[2]).abs() < 0.001, "Branch 0 pre_affine.row0.z mismatch");
+
+        // Test 2: Branch 0 post_affine row0 (results at indices 4, 5, 6, 7)
+        let b0_post_gpu = GpuAffine::from_mat3(b0.post_affine);
+        eprintln!("Test 2: Branch 0 post_affine.row0");
+        eprintln!("  GPU read: ({}, {}, {})", results[4], results[5], results[6]);
+        eprintln!("  Expected: ({}, {}, {})", b0_post_gpu.row0[0], b0_post_gpu.row0[1], b0_post_gpu.row0[2]);
+        assert!((results[4] - b0_post_gpu.row0[0]).abs() < 0.001, "Branch 0 post_affine.row0.x mismatch");
+        assert!((results[5] - b0_post_gpu.row0[1]).abs() < 0.001, "Branch 0 post_affine.row0.y mismatch");
+
+        // Test 3: Branch 0 chroma and weight (results at indices 8-11)
+        eprintln!("Test 3: Branch 0 chroma and weight");
+        eprintln!("  GPU read: chroma=({}, {}), weight={}, color_weight={}", 
+                 results[8], results[9], results[10], results[11]);
+        eprintln!("  Expected: chroma=({}, {}), weight={}, color_weight={}", 
+                 b0.chroma.x, b0.chroma.y, b0.weight, b0.color_weight);
+        assert!((results[8] - b0.chroma.x).abs() < 0.001, "Branch 0 chroma.x mismatch");
+        assert!((results[9] - b0.chroma.y).abs() < 0.001, "Branch 0 chroma.y mismatch");
+        assert!((results[10] - b0.weight).abs() < 0.001, "Branch 0 weight mismatch");
+        assert!((results[11] - b0.color_weight).abs() < 0.001, "Branch 0 color_weight mismatch");
+
+        // Test 4: Branch 1 translation (results at indices 12-15)
+        eprintln!("Test 4: Branch 1 pre_affine translation");
+        eprintln!("  GPU read: ({}, {}, {})", results[12], results[13], results[14]);
+        eprintln!("  Expected: ({}, {}, {})", b1_pre_gpu.row0[0], b1_pre_gpu.row0[2], b1_pre_gpu.row1[2]);
+        assert!((results[12] - b1_pre_gpu.row0[0]).abs() < 0.001, "Branch 1 pre_affine.row0.x mismatch");
+        assert!((results[13] - b1_pre_gpu.row0[2]).abs() < 0.001, "Branch 1 pre_affine.row0.z mismatch");
+        assert!((results[14] - b1_pre_gpu.row1[2]).abs() < 0.001, "Branch 1 pre_affine.row1.z mismatch");
+
+        // Test 5: Branch 2 translation (results at indices 16-19)
+        eprintln!("Test 5: Branch 2 pre_affine translation");
+        eprintln!("  GPU read: ({}, {}, {})", results[16], results[17], results[18]);
+        eprintln!("  Expected: ({}, {}, {})", b2_pre_gpu.row0[0], b2_pre_gpu.row0[2], b2_pre_gpu.row1[2]);
+        assert!((results[16] - b2_pre_gpu.row0[0]).abs() < 0.001, "Branch 2 pre_affine.row0.x mismatch");
+        assert!((results[17] - b2_pre_gpu.row0[2]).abs() < 0.001, "Branch 2 pre_affine.row0.z mismatch");
+        assert!((results[18] - b2_pre_gpu.row1[2]).abs() < 0.001, "Branch 2 pre_affine.row1.z mismatch");
+
+        // Test 6: Identity transform (results at indices 20-23)
+        eprintln!("Test 6: Identity transform (hardcoded verification)");
+        eprintln!("  GPU read: ({}, {})", results[20], results[21]);
+        eprintln!("  Expected: (2.0, 3.0)");
+        assert!((results[20] - 2.0).abs() < 0.001, "apply_affine identity should preserve x");
+        assert!((results[21] - 3.0).abs() < 0.001, "apply_affine identity should preserve y");
+
+        // Test 7: Translation transform (results at indices 24-27)
+        eprintln!("Test 7: Translation transform (hardcoded verification)");
+        eprintln!("  GPU read: ({}, {})", results[24], results[25]);
+        eprintln!("  Expected: (6.0, -1.0)");
+        assert!((results[24] - 6.0).abs() < 0.001, "apply_affine translate should give correct x");
+        assert!((results[25] - (-1.0)).abs() < 0.001, "apply_affine translate should give correct y");
+
+        // Test 8: Scale transform (results at indices 28-31)
+        eprintln!("Test 8: Scale transform (hardcoded verification)");
+        eprintln!("  GPU read: ({}, {})", results[28], results[29]);
+        eprintln!("  Expected: (2.0, 3.0)");
+        assert!((results[28] - 2.0).abs() < 0.001, "apply_affine scale should give correct x");
+        assert!((results[29] - 3.0).abs() < 0.001, "apply_affine scale should give correct y");
+
+        eprintln!("\n✓ All GPU tests passed!");
+        eprintln!("  Data pipeline: Flame::demo() → GpuRenderer::flame_to_gpu_branches() → GPU shader ✓");
     }
 }

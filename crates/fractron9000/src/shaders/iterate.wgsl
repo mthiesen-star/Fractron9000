@@ -1,33 +1,14 @@
 // Fractron 9000 - Iterate Kernel
 // GPU chaos game loop: pick random branch → apply variations → scatter to histogram
+// This shader is concatenated with branch_common.wgsl at compile time.
 
 // ============================================================================
 // TYPES AND CONSTANTS
 // ============================================================================
 
-// Packed 2D affine transform: [a, b, c, d, e, f]
-// Represents: | a  b  e |
-//             | c  d  f |
-//             | 0  0  1 |
-// Using vec4 for alignment - affine uses only first 2 components per row
-struct Affine {
-    row0: vec4<f32>,  // [a, b, e, padding]
-    row1: vec4<f32>,  // [c, d, f, padding]
-}
-
 struct VariEntry {
     var_id: u32,
     weight: f32,
-}
-
-struct Branch {
-    pre_affine: Affine,
-    post_affine: Affine,
-    chroma: vec2<f32>,
-    weight: f32,
-    color_weight: f32,
-    var_count: u32,
-    var_offset: u32,
 }
 
 struct Flame {
@@ -44,7 +25,7 @@ struct Flame {
 // ============================================================================
 
 @group(0) @binding(0) var<uniform> flame: Flame;
-@group(0) @binding(1) var<storage, read> branches: array<Branch>;
+@group(0) @binding(1) var<storage, read> branch_data: array<f32>;
 @group(0) @binding(2) var<storage, read> variations: array<VariEntry>;
 @group(0) @binding(3) var<storage, read_write> histogram: array<atomic<u32>>;
 
@@ -55,13 +36,6 @@ const MAX_ITERATIONS_PER_THREAD: u32 = 1000u;
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
-
-fn apply_affine(p: vec2<f32>, t: Affine) -> vec2<f32> {
-    return vec2<f32>(
-        t.row0.x * p.x + t.row0.y * p.y + t.row0.z,
-        t.row1.x * p.x + t.row1.y * p.y + t.row1.z,
-    );
-}
 
 fn pcg_random(state: ptr<function, u32>) -> f32 {
     let x = *state;
@@ -314,13 +288,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         
         // DIAGNOSTIC: clamp branch_idx to valid range to ensure we're not overflowing
         let safe_branch_idx = min(branch_idx, flame.branch_count - 1u);
-        let branch = branches[safe_branch_idx];
+        let branch = read_branch(safe_branch_idx);
         
-        // Apply pre-affine
+        // Apply pre-affine from GPU buffer
         p = apply_affine(p, branch.pre_affine);
         
-        // SKIP POST-AFFINE: Sierpinski doesn't use it, and applying even identity breaks x-coords
-        // TODO: Debug why post-affine causes x-coordinate collapse
+        // Skip post-affine for now (disabled until we fix the buffer issue)
         // p = apply_affine(p, branch.post_affine);
         
         // Update color
