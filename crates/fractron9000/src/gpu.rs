@@ -6,12 +6,11 @@ use glam::Mat3;
 use fractal_core::flame::Flame;
 
 // ============================================================================
-// GPU BUFFER STRUCTURES (matching WGSL)
+// GPU BUFFER STRUCTURES (internal helpers only - no repr(C) needed)
 // ============================================================================
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-/// GPU-friendly affine transform: row-major layout
+/// GPU-friendly affine transform: row-major layout (internal helper, not sent to GPU as struct)
+#[derive(Copy, Clone)]
 pub struct GpuAffine {
     pub row0: [f32; 4],
     pub row1: [f32; 4],
@@ -31,33 +30,9 @@ impl GpuAffine {
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuBranch {
-    pub pre_affine: GpuAffine,
-    pub post_affine: GpuAffine,
-    pub chroma: [f32; 2],
-    pub weight: f32,
-    pub color_weight: f32,
-    pub var_count: u32,
-    pub var_offset: u32,
-    pub _padding: [u32; 6],  // Pad to 112 bytes (16-byte alignment for std430 array stride)
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GpuVariEntry {
     pub var_id: u32,
     pub weight: f32,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct GpuFlame {
-    pub camera_transform: GpuAffine,
-    pub params: [f32; 4],      // [brightness, gamma, vibrancy, _padding]
-    pub background: [f32; 4],  // [bg_r, bg_g, bg_b, bg_a]
-    pub branch_count: u32,
-    pub total_iterations: u32,
-    pub _padding: [u32; 2],
 }
 
 
@@ -111,25 +86,29 @@ impl GpuRenderer {
         });
         
         // Build GPU buffer data from Rust structures
-        let gpu_flame = Self::flame_to_gpu(flame);
+        let gpu_flame_flat = Self::flame_to_gpu_flat(flame);
         let (gpu_branches, gpu_variations) = Self::flame_to_gpu_branches(flame);
         
-        // DEBUG: Print struct sizes
+        // DEBUG: Print buffer layout
         eprintln!("\n=== BUFFER LAYOUT DIAGNOSTICS ===");
-        eprintln!("GpuAffine size: {} bytes", std::mem::size_of::<GpuAffine>());
-        eprintln!("GpuBranch size: {} bytes", std::mem::size_of::<GpuBranch>());
-        eprintln!("GpuVariEntry size: {} bytes", std::mem::size_of::<GpuVariEntry>());
-        eprintln!("GpuFlame size: {} bytes", std::mem::size_of::<GpuFlame>());
+        eprintln!("Flame buffer: {} f32s ({} bytes) - flat array packing", 
+                 gpu_flame_flat.len(), gpu_flame_flat.len() * 4);
+        eprintln!("  [0-3]:   camera_transform.row0");
+        eprintln!("  [4-7]:   camera_transform.row1");
+        eprintln!("  [8-11]:  params (brightness, gamma, vibrancy, padding)");
+        eprintln!("  [12-15]: background (r, g, b, a)");
+        eprintln!("  [16-17]: branch_count, total_iterations (as bitcast f32)");
         eprintln!();
-        eprintln!("gpu_branches.len() = {} (f32 elements, 18 per branch = {} branches)", 
-                 gpu_branches.len(), gpu_branches.len() / 18);
-        eprintln!("Buffer size = {} bytes", gpu_branches.len() * 4);
+        eprintln!("Branches buffer: {} f32s ({} bytes) - {} branches", 
+                 gpu_branches.len(), gpu_branches.len() * 4, gpu_branches.len() / 18);
+        eprintln!("Variations buffer: {} entries ({} bytes)", 
+                 gpu_variations.len(), gpu_variations.len() * 8);
         
         // Create buffers
         let flame_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
-            label: Some("flame_uniform"),
-            contents: bytemuck::cast_slice(&[gpu_flame]),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            label: Some("flame_ssbo"),
+            contents: bytemuck::cast_slice(&gpu_flame_flat),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
         
         let branches_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
@@ -184,7 +163,7 @@ impl GpuRenderer {
                     binding: 0,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
+                        ty: BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -255,7 +234,7 @@ impl GpuRenderer {
                     binding: 0,
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
+                        ty: BufferBindingType::Storage { read_only: true },
                         has_dynamic_offset: false,
                         min_binding_size: None,
                     },
@@ -467,18 +446,52 @@ impl GpuRenderer {
     // CONVERSION HELPERS
     // ========================================================================
     
-    fn flame_to_gpu(flame: &Flame) -> GpuFlame {
-        let result = GpuFlame {
-            camera_transform: GpuAffine::from_mat3(flame.camera_transform),
-            params: [flame.brightness, flame.gamma, flame.vibrancy, 0.0],
-            background: [flame.background.x, flame.background.y, flame.background.z, flame.background.w],
-            branch_count: flame.branches.len() as u32,
-            total_iterations: 100000000, // Scale based on ~65M iterations/frame at 60 FPS
-            _padding: [0; 2],
-        };
-        eprintln!("GPU Flame: branch_count={}, brightness={}, gamma={}", 
-            result.branch_count, result.params[0], result.params[1]);
-        result
+    /// Pack Flame into flat f32 array (18 elements) for storage buffer transmission.
+    /// 
+    /// Layout (18 f32 elements):
+    /// [0-3]:   camera_transform.row0 (a, b, e, _padding)
+    /// [4-7]:   camera_transform.row1 (c, d, f, _padding)
+    /// [8]:     brightness
+    /// [9]:     gamma
+    /// [10]:    vibrancy
+    /// [11]:    _params_padding
+    /// [12-15]: background (r, g, b, a)
+    /// [16]:    branch_count (bitcast as f32)
+    /// [17]:    total_iterations (bitcast as f32)
+    fn flame_to_gpu_flat(flame: &Flame) -> Vec<f32> {
+        let camera_transform = GpuAffine::from_mat3(flame.camera_transform);
+        let branch_count = flame.branches.len() as u32;
+        let total_iterations = 100000000u32; // Scale based on ~65M iterations/frame at 60 FPS
+        
+        vec![
+            // camera_transform.row0 (4 f32s)
+            camera_transform.row0[0],
+            camera_transform.row0[1],
+            camera_transform.row0[2],
+            camera_transform.row0[3],
+            
+            // camera_transform.row1 (4 f32s)
+            camera_transform.row1[0],
+            camera_transform.row1[1],
+            camera_transform.row1[2],
+            camera_transform.row1[3],
+            
+            // params (4 f32s)
+            flame.brightness,
+            flame.gamma,
+            flame.vibrancy,
+            0.0,  // _params_padding
+            
+            // background (4 f32s)
+            flame.background.x,
+            flame.background.y,
+            flame.background.z,
+            flame.background.w,
+            
+            // counters (2 f32s with bitcast u32s)
+            f32::from_bits(branch_count),
+            f32::from_bits(total_iterations),
+        ]
     }
     
     fn flame_to_gpu_branches(flame: &Flame) -> (Vec<f32>, Vec<GpuVariEntry>) {
@@ -654,19 +667,23 @@ mod tests {
     // GPU SHADER TESTS (requires wgpu device)
     // ====================================================================
 
-    /// Test shader that validates read_branch() and apply_affine() functions
+    /// Test shader that validates read_flame() and read_branch() functions
     /// Each test case writes a vec4 result to the results buffer
     const GPU_TEST_SHADER: &str = r#"
-        @group(0) @binding(0) var<storage, read> branch_data: array<f32>;
-        @group(0) @binding(1) var<storage, read_write> results: array<vec4<f32>>;
+        @group(0) @binding(0) var<storage, read> flame_data: array<f32>;
+        @group(0) @binding(1) var<storage, read> branch_data: array<f32>;
+        @group(0) @binding(2) var<storage, read_write> results: array<vec4<f32>>;
 
         @compute @workgroup_size(1)
         fn main() {
             var result_idx = 0u;
             
             // ============================================================
-            // TEST SUITE: branch_common.wgsl functions
+            // TEST SUITE: read_flame() and read_branch() functions
             // ============================================================
+            
+            // Read flame once to validate packing
+            let flame = read_flame();
             
             // Test 1: read_branch(0) - Branch 0 pre_affine row0
             var b0 = read_branch(0u);
@@ -835,6 +852,14 @@ mod tests {
             panic!("Shader compilation error: {:?}", error);
         }
 
+        // Create a flame_data buffer for the test
+        let flame_data_for_test = GpuRenderer::flame_to_gpu_flat(&flame);
+        let flame_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("test_flame_data"),
+            contents: bytemuck::cast_slice(&flame_data_for_test),
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        });
+
         // Create bind group layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("test_bind_group_layout"),
@@ -853,6 +878,16 @@ mod tests {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: false },
                         has_dynamic_offset: false,
                         min_binding_size: None,
@@ -868,10 +903,14 @@ mod tests {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: branch_data_buffer.as_entire_binding(),
+                    resource: flame_data_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
+                    resource: branch_data_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
                     resource: results_buffer.as_entire_binding(),
                 },
             ],

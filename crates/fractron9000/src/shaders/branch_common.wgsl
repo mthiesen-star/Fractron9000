@@ -6,6 +6,16 @@ struct Affine {
     row1: vec4<f32>,  // [c, d, f, padding]
 }
 
+struct FlameData {
+    camera_transform: Affine,
+    brightness: f32,
+    gamma: f32,
+    vibrancy: f32,
+    background: vec4<f32>,
+    branch_count: u32,
+    total_iterations: u32,
+}
+
 struct BranchData {
     pre_affine: Affine,
     post_affine: Affine,
@@ -22,6 +32,55 @@ fn apply_affine(p: vec2<f32>, t: Affine) -> vec2<f32> {
         t.row0.x * p.x + t.row0.y * p.y + t.row0.z,
         t.row1.x * p.x + t.row1.y * p.y + t.row1.z,
     );
+}
+
+/// Read flame parameters from flat f32 array (18 elements).
+/// Each shader must declare: @group(0) @binding(0) var<storage, read> flame_data: array<f32>;
+/// Layout:
+/// [0-3]:   camera_transform.row0 (a, b, e, padding)
+/// [4-7]:   camera_transform.row1 (c, d, f, padding)
+/// [8]:     brightness
+/// [9]:     gamma
+/// [10]:    vibrancy
+/// [11]:    _params_padding
+/// [12-15]: background (r, g, b, a)
+/// [16]:    branch_count (bitcast as f32)
+/// [17]:    total_iterations (bitcast as f32)
+fn read_flame() -> FlameData {
+    var flame: FlameData;
+    
+    // camera_transform [0-7]
+    flame.camera_transform.row0 = vec4<f32>(
+        flame_data[0u],  // a
+        flame_data[1u],  // b
+        flame_data[2u],  // e
+        flame_data[3u]   // padding
+    );
+    flame.camera_transform.row1 = vec4<f32>(
+        flame_data[4u],  // c
+        flame_data[5u],  // d
+        flame_data[6u],  // f
+        flame_data[7u]   // padding
+    );
+    
+    // params [8-11]
+    flame.brightness = flame_data[8u];
+    flame.gamma = flame_data[9u];
+    flame.vibrancy = flame_data[10u];
+    
+    // background [12-15]
+    flame.background = vec4<f32>(
+        flame_data[12u],
+        flame_data[13u],
+        flame_data[14u],
+        flame_data[15u]
+    );
+    
+    // counters [16-17] (bitcast from f32)
+    flame.branch_count = bitcast<u32>(flame_data[16u]);
+    flame.total_iterations = bitcast<u32>(flame_data[17u]);
+    
+    return flame;
 }
 
 /// Read a branch from the flat f32 buffer (18 elements per branch).

@@ -11,20 +11,11 @@ struct VariEntry {
     weight: f32,
 }
 
-struct Flame {
-    camera_transform: Affine,
-    params: vec4<f32>,          // [brightness, gamma, vibrancy, _padding]
-    background: vec4<f32>,      // [bg_r, bg_g, bg_b, bg_a]
-    branch_count: u32,
-    total_iterations: u32,
-    _padding: vec2<u32>,
-}
-
 // ============================================================================
 // PARAMETERS (passed in via bind groups)
 // ============================================================================
 
-@group(0) @binding(0) var<uniform> flame: Flame;
+@group(0) @binding(0) var<storage, read> flame_data: array<f32>;
 @group(0) @binding(1) var<storage, read> branch_data: array<f32>;
 @group(0) @binding(2) var<storage, read> variations: array<VariEntry>;
 @group(0) @binding(3) var<storage, read_write> histogram: array<atomic<u32>>;
@@ -273,6 +264,9 @@ fn apply_variation(var_id: u32, p: vec2<f32>, weight: f32, rand: f32) -> vec2<f3
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let thread_id = gid.x;
     var state = thread_id + 12345u;
+    
+    // Read flame parameters from flat array
+    let flame = read_flame();
     
     // DIAGNOSTIC: Test random starting points to see if they spread across all 3 regions
     var p = vec2<f32>(
