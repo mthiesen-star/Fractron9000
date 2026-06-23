@@ -28,36 +28,80 @@ const MAX_ITERATIONS_PER_THREAD: u32 = 1000u;
 // UTILITY FUNCTIONS
 // ============================================================================
 
-/// Convert chroma (u, v) in [0, 1]² to RGB using HSV-based mapping.
-/// This maps branch chroma values to distinct colors suitable for fractal visualization.
+/// Convert branch chroma (u, v) in [0, 1]^2 to RGB using the Legacy Fractron mapping.
+///
+/// This is a direct WGSL port of Legacy/Fractron9000/Palette.cs: ChromaToColor,
+/// where palette coordinates are first mapped to x,y in [-1, 1] with Y flipped.
+/// It is not HSV. The transform is piecewise over 6 sectors and uses only simple
+/// arithmetic plus asin/acos.
 fn chroma_to_rgb(chroma: vec2<f32>) -> vec3<f32> {
-    // Treat chroma as HSV coordinates
-    // u (x) -> hue (0-1 mapped to 0-360 degrees, 6 sectors)
-    // v (y) -> saturation (0-1)
-    // Value/brightness = 1
-    
-    let hue = chroma.x * 6.0;  // 0-6 for the 6 color sectors
-    let sat = chroma.y;        // 0-1 saturation
-    let val = 1.0;             // Full brightness
-    
-    let c = sat * val;
-    let h_rem = hue - floor(hue / 2.0) * 2.0;  // fmod(hue, 2.0)
-    let x = c * (1.0 - abs(h_rem - 1.0));
-    let m = val - c;
-    
-    var rgb = vec3<f32>(0.0);
-    
-    let h_int = i32(hue);
-    switch(h_int) {
-        case 0: { rgb = vec3<f32>(c, x, 0.0); }
-        case 1: { rgb = vec3<f32>(x, c, 0.0); }
-        case 2: { rgb = vec3<f32>(0.0, c, x); }
-        case 3: { rgb = vec3<f32>(0.0, x, c); }
-        case 4: { rgb = vec3<f32>(x, 0.0, c); }
-        default: { rgb = vec3<f32>(c, 0.0, x); }
+    let sqrt3 = 1.7320508075688772;
+
+    // Match Legacy palette UV -> chroma plane mapping:
+    // fx = 2*u - 1, fy = 1 - 2*v
+    var x = chroma.x * 2.0 - 1.0;
+    var y = 1.0 - chroma.y * 2.0;
+
+    let len2 = x * x + y * y;
+    if len2 <= 1e-12 {
+        return vec3<f32>(1.0);
     }
-    
-    return rgb + m;
+
+    let len = sqrt(len2);
+    x = x / len;
+    y = y / len;
+
+    let s = min(len, 1.0);
+
+    var r = 0.0;
+    var g = 0.0;
+    var b = 0.0;
+    var theta = 0.0;
+    var f = 0.0;
+
+    if y >= 0.0 {
+        if y < sqrt3 * x {
+            theta = asin(y);
+            f = 3.0 * theta / 3.141592653589793;
+            r = 1.0;
+            g = 1.0 - (1.0 - f) * s;
+            b = 1.0 - s;
+        } else if y > -sqrt3 * x {
+            theta = acos(x);
+            f = 3.0 * theta / 3.141592653589793 - 1.0;
+            r = 1.0 - f * s;
+            g = 1.0;
+            b = 1.0 - s;
+        } else {
+            theta = 3.141592653589793 - asin(y);
+            f = 3.0 * theta / 3.141592653589793 - 2.0;
+            r = 1.0 - s;
+            g = 1.0;
+            b = 1.0 - (1.0 - f) * s;
+        }
+    } else {
+        if y > sqrt3 * x {
+            theta = 3.141592653589793 - asin(y);
+            f = 3.0 * theta / 3.141592653589793 - 3.0;
+            r = 1.0 - s;
+            g = 1.0 - f * s;
+            b = 1.0;
+        } else if y < -sqrt3 * x {
+            theta = 2.0 * 3.141592653589793 - acos(x);
+            f = 3.0 * theta / 3.141592653589793 - 4.0;
+            r = 1.0 - (1.0 - f) * s;
+            g = 1.0 - s;
+            b = 1.0;
+        } else {
+            theta = 2.0 * 3.141592653589793 + asin(y);
+            f = 3.0 * theta / 3.141592653589793 - 5.0;
+            r = 1.0;
+            g = 1.0 - s;
+            b = 1.0 - f * s;
+        }
+    }
+
+    return clamp(vec3<f32>(r, g, b), vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 /// Pack a float in [0, 1] into a u32 for accumulation (0-255 range).
