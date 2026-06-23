@@ -72,7 +72,7 @@ pub struct GpuRenderer {
 
 impl GpuRenderer {
     /// Initialize GPU renderer (must be called with initialized wgpu device/queue)
-    pub async fn new(device: &Device, queue: &Queue, flame: &Flame) -> Result<Self, String> {
+    pub fn new(device: &Device, queue: &Queue, flame: &Flame) -> Result<Self, String> {
         // Compile shaders with shared branch_common utilities concatenated
         let branch_common = include_str!("shaders/branch_common.wgsl");
         let iterate_src = include_str!("shaders/iterate.wgsl");
@@ -141,7 +141,8 @@ impl GpuRenderer {
         // Initialize histogram to zeros
         {
             let mut mapping = histogram_buffer.slice(..).get_mapped_range_mut();
-            mapping.fill(0u8);
+            let zeros = vec![0u8; mapping.len()];
+            mapping.copy_from_slice(&zeros);
         }
         histogram_buffer.unmap();
         
@@ -195,14 +196,14 @@ impl GpuRenderer {
         });
         
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 texture: &palette_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             bytemuck::cast_slice(&palette_rgba),
-            wgpu::ImageDataLayout {
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(palette_width * 4),
                 rows_per_image: Some(palette_height),
@@ -222,7 +223,7 @@ impl GpuRenderer {
             address_mode_w: AddressMode::ClampToEdge,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
-            mipmap_filter: FilterMode::Nearest,
+            mipmap_filter: MipmapFilterMode::Nearest,
             ..Default::default()
         });
         
@@ -306,11 +307,11 @@ impl GpuRenderer {
             label: Some("iterate_pipeline"),
             layout: Some(&device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("iterate_layout"),
-                bind_group_layouts: &[&iterate_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&iterate_bind_group_layout)],
+                immediate_size: 0,
             })),
             module: &iterate_module,
-            entry_point: "main",
+            entry_point: Some("main"),
             cache: None,
             compilation_options: Default::default(),
         });
@@ -377,11 +378,11 @@ impl GpuRenderer {
             label: Some("tonemap_pipeline"),
             layout: Some(&device.create_pipeline_layout(&PipelineLayoutDescriptor {
                 label: Some("tonemap_layout"),
-                bind_group_layouts: &[&tonemap_bind_group_layout],
-                push_constant_ranges: &[],
+                bind_group_layouts: &[Some(&tonemap_bind_group_layout)],
+                immediate_size: 0,
             })),
             module: &tonemap_module,
-            entry_point: "main",
+            entry_point: Some("main"),
             cache: None,
             compilation_options: Default::default(),
         });
@@ -448,6 +449,10 @@ impl GpuRenderer {
     pub fn output_texture(&self) -> &Texture {
         &self.output_texture
     }
+
+    pub fn output_texture_view(&self) -> &TextureView {
+        &self.output_texture_view
+    }
     
     /// Read the output texture back to CPU as RGBA8 data (synchronous with device.poll)
     pub fn read_output_to_vec(&self, device: &Device, queue: &Queue) -> Vec<u8> {
@@ -474,15 +479,15 @@ impl GpuRenderer {
         });
         
         encoder.copy_texture_to_buffer(
-            ImageCopyTexture {
+            TexelCopyTextureInfo {
                 texture: &self.output_texture,
                 mip_level: 0,
                 origin: Origin3d::ZERO,
                 aspect: TextureAspect::All,
             },
-            ImageCopyBuffer {
+            TexelCopyBufferInfo {
                 buffer: &staging_buffer,
-                layout: ImageDataLayout {
+                layout: TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row as u32),
                     rows_per_image: None,
@@ -495,7 +500,7 @@ impl GpuRenderer {
         queue.submit(std::iter::once(encoder.finish()));
         
         // Force GPU to complete all submitted work
-        device.poll(wgpu::Maintain::Wait);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
         
         // Now request map - it should succeed immediately since work is done
         let mut mapped_successfully = false;
@@ -503,7 +508,7 @@ impl GpuRenderer {
             staging_buffer.slice(..).map_async(MapMode::Read, |_| {});
             
             // Poll again to process the map request
-            device.poll(wgpu::Maintain::Wait);
+            let _ = device.poll(wgpu::PollType::wait_indefinitely());
             
             // Try to get the mapped range
             if let Ok(_) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
