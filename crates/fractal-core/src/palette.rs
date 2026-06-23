@@ -56,6 +56,83 @@ impl Palette {
         }
     }
 
+    /// Generate a 2D palette using the Legacy Fractron ChromaToColor 6-sector mapping.
+    /// This creates a 256x256 2D texture where (u, v) in [0, 1]² map to distinct colors.
+    /// Port of Legacy/Fractron9000/Palette.cs: ChromaToColor with 6 angular sectors.
+    pub fn generate_2d_palette() -> Self {
+        let width = 256u32;
+        let height = 256u32;
+        let mut colors = Vec::with_capacity((width * height) as usize);
+
+        let sqrt3 = 1.7320508075688772;
+
+        for y_idx in 0..height {
+            for x_idx in 0..width {
+                // Map pixel coordinates to normalized [0, 1] space
+                let u = x_idx as f32 / (width as f32 - 1.0);
+                let v = y_idx as f32 / (height as f32 - 1.0);
+
+                // Legacy mapping: fx = 2*u - 1, fy = 1 - 2*v
+                let mut x = u * 2.0 - 1.0;
+                let mut y = 1.0 - v * 2.0;
+
+                let len2 = x * x + y * y;
+                let rgb = if len2 <= 1e-12 {
+                    Vec3::new(1.0, 1.0, 1.0) // White center
+                } else {
+                    let len = len2.sqrt();
+                    x /= len;
+                    y /= len;
+
+                    let s = len.min(1.0);
+
+                    let (r, g, b) = if y >= 0.0 {
+                        if y < sqrt3 * x {
+                            let theta = y.asin();
+                            let f = 3.0 * theta / std::f32::consts::PI;
+                            (1.0, 1.0 - (1.0 - f) * s, 1.0 - s)
+                        } else if y > -sqrt3 * x {
+                            let theta = x.acos();
+                            let f = 3.0 * theta / std::f32::consts::PI - 1.0;
+                            (1.0 - f * s, 1.0, 1.0 - s)
+                        } else {
+                            let theta = std::f32::consts::PI - y.asin();
+                            let f = 3.0 * theta / std::f32::consts::PI - 2.0;
+                            (1.0 - s, 1.0, 1.0 - (1.0 - f) * s)
+                        }
+                    } else if y > sqrt3 * x {
+                        let theta = std::f32::consts::PI - y.asin();
+                        let f = 3.0 * theta / std::f32::consts::PI - 3.0;
+                        (1.0 - s, 1.0 - f * s, 1.0)
+                    } else if y < -sqrt3 * x {
+                        let theta = 2.0 * std::f32::consts::PI - x.acos();
+                        let f = 3.0 * theta / std::f32::consts::PI - 4.0;
+                        (1.0 - (1.0 - f) * s, 1.0 - s, 1.0)
+                    } else {
+                        let theta = 2.0 * std::f32::consts::PI + y.asin();
+                        let f = 3.0 * theta / std::f32::consts::PI - 5.0;
+                        (1.0, 1.0 - s, 1.0 - f * s)
+                    };
+
+                    Vec3::new(
+                        r.clamp(0.0, 1.0),
+                        g.clamp(0.0, 1.0),
+                        b.clamp(0.0, 1.0),
+                    )
+                };
+
+                colors.push(rgb);
+            }
+        }
+
+        Palette {
+            colors,
+            width,
+            height,
+            name: Some("Fractron2D".to_string()),
+        }
+    }
+
     /// Sample the palette at normalized coordinates (u, v) in [0, 1].
     /// Uses bilinear filtering for smooth color transitions.
     pub fn sample(&self, u: f32, v: f32) -> Vec3 {

@@ -44,6 +44,7 @@ const HIST_HEIGHT: u32 = 768;
 // GPU RENDERER
 // ============================================================================
 
+#[allow(dead_code)]
 pub struct GpuRenderer {
     // Pipelines
     iterate_pipeline: ComputePipeline,
@@ -54,6 +55,11 @@ pub struct GpuRenderer {
     branches_buffer: Buffer,
     variations_buffer: Buffer,
     histogram_buffer: Buffer,
+    
+    // Palette texture for chroma->RGB mapping (2D Legacy palette)
+    palette_texture: Texture,
+    palette_texture_view: TextureView,
+    palette_sampler: Sampler,
     
     // Output texture
     output_texture: Texture,
@@ -66,7 +72,7 @@ pub struct GpuRenderer {
 
 impl GpuRenderer {
     /// Initialize GPU renderer (must be called with initialized wgpu device/queue)
-    pub async fn new(device: &Device, _queue: &Queue, flame: &Flame) -> Result<Self, String> {
+    pub async fn new(device: &Device, queue: &Queue, flame: &Flame) -> Result<Self, String> {
         // Compile shaders with shared branch_common utilities concatenated
         let branch_common = include_str!("shaders/branch_common.wgsl");
         let iterate_src = include_str!("shaders/iterate.wgsl");
@@ -157,6 +163,69 @@ impl GpuRenderer {
         
         let output_texture_view = output_texture.create_view(&TextureViewDescriptor::default());
         
+        // Generate and upload 2D palette texture (Legacy ChromaToColor 6-sector mapping)
+        let palette = fractal_core::palette::Palette::generate_2d_palette();
+        let palette_width = palette.width;
+        let palette_height = palette.height;
+        
+        // Convert palette Vec3 colors to RGBA u32 for GPU texture
+        let mut palette_rgba = Vec::with_capacity((palette_width * palette_height) as usize);
+        for color in palette.colors {
+            let r = (color.x.clamp(0.0, 1.0) * 255.0) as u8;
+            let g = (color.y.clamp(0.0, 1.0) * 255.0) as u8;
+            let b = (color.z.clamp(0.0, 1.0) * 255.0) as u8;
+            let a = 255u8;
+            let rgba = ((a as u32) << 24) | ((b as u32) << 16) | ((g as u32) << 8) | (r as u32);
+            palette_rgba.push(rgba);
+        }
+        
+        let palette_texture = device.create_texture(&TextureDescriptor {
+            label: Some("palette_texture"),
+            size: Extent3d {
+                width: palette_width,
+                height: palette_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &palette_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytemuck::cast_slice(&palette_rgba),
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(palette_width * 4),
+                rows_per_image: Some(palette_height),
+            },
+            Extent3d {
+                width: palette_width,
+                height: palette_height,
+                depth_or_array_layers: 1,
+            },
+        );
+        
+        let palette_texture_view = palette_texture.create_view(&TextureViewDescriptor::default());
+        let palette_sampler = device.create_sampler(&SamplerDescriptor {
+            label: Some("palette_sampler"),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: FilterMode::Nearest,
+            ..Default::default()
+        });
+        
         // Create iterate bind group
         let iterate_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("iterate_bgl"),
@@ -201,6 +270,22 @@ impl GpuRenderer {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
         
@@ -212,6 +297,8 @@ impl GpuRenderer {
                 BindGroupEntry { binding: 1, resource: branches_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 2, resource: variations_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 3, resource: histogram_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&palette_texture_view) },
+                BindGroupEntry { binding: 5, resource: BindingResource::Sampler(&palette_sampler) },
             ],
         });
         
@@ -299,8 +386,6 @@ impl GpuRenderer {
             compilation_options: Default::default(),
         });
         
-
-        
         Ok(Self {
             iterate_pipeline,
             tonemap_pipeline,
@@ -308,6 +393,9 @@ impl GpuRenderer {
             branches_buffer,
             variations_buffer,
             histogram_buffer,
+            palette_texture,
+            palette_texture_view,
+            palette_sampler,
             output_texture,
             output_texture_view,
             iterate_bind_group,
@@ -356,6 +444,7 @@ impl GpuRenderer {
     
 
     
+    #[allow(dead_code)]
     pub fn output_texture(&self) -> &Texture {
         &self.output_texture
     }

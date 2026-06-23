@@ -6,6 +6,7 @@ use fractal_core::flame::Flame;
 use std::sync::Arc;
 use wgpu::{Device, Queue};
 
+#[allow(dead_code)]
 pub struct FractronApp {
     flame: Flame,
     gpu_renderer: Option<GpuRenderer>,

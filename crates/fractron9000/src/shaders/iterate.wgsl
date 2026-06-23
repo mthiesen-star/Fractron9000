@@ -19,6 +19,8 @@ struct VariEntry {
 @group(0) @binding(1) var<storage, read> branch_data: array<f32>;
 @group(0) @binding(2) var<storage, read> variations: array<VariEntry>;
 @group(0) @binding(3) var<storage, read_write> histogram: array<atomic<u32>>;
+@group(0) @binding(4) var palette_texture: texture_2d<f32>;
+@group(0) @binding(5) var palette_sampler: sampler;
 
 const HIST_WIDTH: u32 = 1024u;
 const HIST_HEIGHT: u32 = 768u;
@@ -28,80 +30,12 @@ const MAX_ITERATIONS_PER_THREAD: u32 = 1000u;
 // UTILITY FUNCTIONS
 // ============================================================================
 
-/// Convert branch chroma (u, v) in [0, 1]^2 to RGB using the Legacy Fractron mapping.
-///
-/// This is a direct WGSL port of Legacy/Fractron9000/Palette.cs: ChromaToColor,
-/// where palette coordinates are first mapped to x,y in [-1, 1] with Y flipped.
-/// It is not HSV. The transform is piecewise over 6 sectors and uses only simple
-/// arithmetic plus asin/acos.
-fn chroma_to_rgb(chroma: vec2<f32>) -> vec3<f32> {
-    let sqrt3 = 1.7320508075688772;
-
-    // Match Legacy palette UV -> chroma plane mapping:
-    // fx = 2*u - 1, fy = 1 - 2*v
-    var x = chroma.x * 2.0 - 1.0;
-    var y = 1.0 - chroma.y * 2.0;
-
-    let len2 = x * x + y * y;
-    if len2 <= 1e-12 {
-        return vec3<f32>(1.0);
-    }
-
-    let len = sqrt(len2);
-    x = x / len;
-    y = y / len;
-
-    let s = min(len, 1.0);
-
-    var r = 0.0;
-    var g = 0.0;
-    var b = 0.0;
-    var theta = 0.0;
-    var f = 0.0;
-
-    if y >= 0.0 {
-        if y < sqrt3 * x {
-            theta = asin(y);
-            f = 3.0 * theta / 3.141592653589793;
-            r = 1.0;
-            g = 1.0 - (1.0 - f) * s;
-            b = 1.0 - s;
-        } else if y > -sqrt3 * x {
-            theta = acos(x);
-            f = 3.0 * theta / 3.141592653589793 - 1.0;
-            r = 1.0 - f * s;
-            g = 1.0;
-            b = 1.0 - s;
-        } else {
-            theta = 3.141592653589793 - asin(y);
-            f = 3.0 * theta / 3.141592653589793 - 2.0;
-            r = 1.0 - s;
-            g = 1.0;
-            b = 1.0 - (1.0 - f) * s;
-        }
-    } else {
-        if y > sqrt3 * x {
-            theta = 3.141592653589793 - asin(y);
-            f = 3.0 * theta / 3.141592653589793 - 3.0;
-            r = 1.0 - s;
-            g = 1.0 - f * s;
-            b = 1.0;
-        } else if y < -sqrt3 * x {
-            theta = 2.0 * 3.141592653589793 - acos(x);
-            f = 3.0 * theta / 3.141592653589793 - 4.0;
-            r = 1.0 - (1.0 - f) * s;
-            g = 1.0 - s;
-            b = 1.0;
-        } else {
-            theta = 2.0 * 3.141592653589793 + asin(y);
-            f = 3.0 * theta / 3.141592653589793 - 5.0;
-            r = 1.0;
-            g = 1.0 - s;
-            b = 1.0 - f * s;
-        }
-    }
-
-    return clamp(vec3<f32>(r, g, b), vec3<f32>(0.0), vec3<f32>(1.0));
+/// Sample chroma (u, v) from the 2D palette texture.
+/// Chroma coordinates are directly used as normalized texture coordinates.
+/// This matches Legacy Fractron's palette sampling: color = texture(palette, chroma).
+fn sample_palette(chroma: vec2<f32>) -> vec3<f32> {
+    let color = textureSampleLevel(palette_texture, palette_sampler, chroma, 0.0);
+    return color.rgb;
 }
 
 /// Pack a float in [0, 1] into a u32 for accumulation (0-255 range).
@@ -393,7 +327,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let pixel_idx_base = (hist_y * HIST_WIDTH + hist_x) * 4u;
             
             // Convert chroma to RGB and accumulate
-            let rgb = chroma_to_rgb(color);
+            let rgb = sample_palette(color);
             let r_packed = pack_color_channel(rgb.x);
             let g_packed = pack_color_channel(rgb.y);
             let b_packed = pack_color_channel(rgb.z);
