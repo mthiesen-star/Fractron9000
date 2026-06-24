@@ -22,8 +22,6 @@ struct VariEntry {
 @group(0) @binding(4) var palette_texture: texture_2d<f32>;
 @group(0) @binding(5) var palette_sampler: sampler;
 
-const HIST_WIDTH: u32 = 1024u;
-const HIST_HEIGHT: u32 = 768u;
 const MAX_ITERATIONS_PER_THREAD: u32 = 1000u;
 
 // ============================================================================
@@ -318,13 +316,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         // Apply camera transform to convert world space to normalized screen space ([-1, 1])
         let screen_pos = apply_affine(p, flame.camera_transform);
         
-        // Map from normalized screen space [-1, 1] to pixel coordinates [0, HIST_WIDTH) × [0, HIST_HEIGHT)
+        // Map from normalized screen space [-1, 1] to pixel coordinates [0, hist_width) x [0, hist_height)
         // Note: Y-flip is handled by tonemap shader at display time, not here
-        let hist_x = u32(clamp((screen_pos.x + 1.0) * 0.5 * f32(HIST_WIDTH), 0.0, f32(HIST_WIDTH - 1u)));
-        let hist_y = u32(clamp((screen_pos.y + 1.0) * 0.5 * f32(HIST_HEIGHT), 0.0, f32(HIST_HEIGHT - 1u)));
+        let hist_width = max(flame.hist_width, 1u);
+        let hist_height = max(flame.hist_height, 1u);
+        let hist_x = u32(clamp((screen_pos.x + 1.0) * 0.5 * f32(hist_width), 0.0, f32(hist_width - 1u)));
+        let hist_y = u32(clamp((screen_pos.y + 1.0) * 0.5 * f32(hist_height), 0.0, f32(hist_height - 1u)));
         
-        if hist_x < HIST_WIDTH && hist_y < HIST_HEIGHT {
-            let pixel_idx_base = (hist_y * HIST_WIDTH + hist_x) * 4u;
+        if hist_x < hist_width && hist_y < hist_height {
+            let pixel_idx_base = (hist_y * hist_width + hist_x) * 4u;
             
             // Convert chroma to RGB and accumulate
             let rgb = sample_palette(color);

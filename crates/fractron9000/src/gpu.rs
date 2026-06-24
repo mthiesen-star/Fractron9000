@@ -99,7 +99,7 @@ impl GpuRenderer {
         });
         
         // Build GPU buffer data from Rust structures
-        let gpu_flame_flat = Self::flame_to_gpu_flat(flame);
+        let gpu_flame_flat = Self::flame_to_gpu_flat(flame, output_width, output_height);
         let (gpu_branches, gpu_variations) = Self::flame_to_gpu_branches(flame);
         
         // DEBUG: Print buffer layout
@@ -111,6 +111,7 @@ impl GpuRenderer {
         eprintln!("  [8-11]:  params (brightness, gamma, vibrancy, padding)");
         eprintln!("  [12-15]: background (r, g, b, a)");
         eprintln!("  [16-17]: branch_count, total_iterations (as bitcast f32)");
+        eprintln!("  [18-19]: hist_width, hist_height (as bitcast f32)");
         eprintln!();
         eprintln!("Branches buffer: {} f32s ({} bytes) - {} branches", 
                  gpu_branches.len(), gpu_branches.len() * 4, gpu_branches.len() / 18);
@@ -566,7 +567,7 @@ impl GpuRenderer {
     pub fn resize(
         &mut self,
         device: &Device,
-        _queue: &Queue,
+        queue: &Queue,
         new_width: u32,
         new_height: u32,
     ) -> Result<(), String> {
@@ -744,6 +745,9 @@ impl GpuRenderer {
             ],
         });
 
+        let resized_dims = [f32::from_bits(new_width), f32::from_bits(new_height)];
+        queue.write_buffer(&self.flame_buffer, (18 * 4) as u64, bytemuck::cast_slice(&resized_dims));
+
         self.histogram_buffer = histogram_buffer;
         self.output_texture = output_texture;
         self.output_texture_view = output_texture_view;
@@ -759,9 +763,9 @@ impl GpuRenderer {
     // CONVERSION HELPERS
     // ========================================================================
     
-    /// Pack Flame into flat f32 array (18 elements) for storage buffer transmission.
+    /// Pack Flame into flat f32 array (20 elements) for storage buffer transmission.
     /// 
-    /// Layout (18 f32 elements):
+    /// Layout (20 f32 elements):
     /// [0-3]:   camera_transform.row0 (a, b, e, _padding)
     /// [4-7]:   camera_transform.row1 (c, d, f, _padding)
     /// [8]:     brightness
@@ -771,7 +775,9 @@ impl GpuRenderer {
     /// [12-15]: background (r, g, b, a)
     /// [16]:    branch_count (bitcast as f32)
     /// [17]:    total_iterations (bitcast as f32)
-    fn flame_to_gpu_flat(flame: &Flame) -> Vec<f32> {
+    /// [18]:    hist_width (bitcast as f32)
+    /// [19]:    hist_height (bitcast as f32)
+    fn flame_to_gpu_flat(flame: &Flame, hist_width: u32, hist_height: u32) -> Vec<f32> {
         let camera_transform = GpuAffine::from_mat3(flame.camera_transform);
         let branch_count = flame.branches.len() as u32;
         let total_iterations = 100000000u32; // Scale based on ~65M iterations/frame at 60 FPS
@@ -801,9 +807,11 @@ impl GpuRenderer {
             flame.background.z,
             flame.background.w,
             
-            // counters (2 f32s with bitcast u32s)
+            // counters + dimensions (4 f32s with bitcast u32s)
             f32::from_bits(branch_count),
             f32::from_bits(total_iterations),
+            f32::from_bits(hist_width),
+            f32::from_bits(hist_height),
         ]
     }
     
@@ -1163,7 +1171,7 @@ mod tests {
         });
 
         // Create a flame_data buffer for the test
-        let flame_data_for_test = GpuRenderer::flame_to_gpu_flat(&flame);
+        let flame_data_for_test = GpuRenderer::flame_to_gpu_flat(&flame, 1024, 768);
         let flame_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("test_flame_data"),
             contents: bytemuck::cast_slice(&flame_data_for_test),

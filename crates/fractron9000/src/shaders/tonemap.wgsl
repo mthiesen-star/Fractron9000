@@ -7,8 +7,6 @@
 @group(0) @binding(2) var<storage, read> branch_data: array<f32>;  // Needed by branch_common, not used by tonemap
 @group(0) @binding(3) var output_texture: texture_storage_2d<rgba8unorm, write>;
 
-const HIST_WIDTH: u32 = 1024u;
-const HIST_HEIGHT: u32 = 768u;
 const PIXEL_AREA: f32 = 1.0;
 const C1: f32 = 1.0;
 
@@ -70,15 +68,18 @@ fn tone_map_binary_debug(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let pixel_x = gid.x;
     let pixel_y = gid.y;
+    let flame = read_flame();
+    let hist_width = max(flame.hist_width, 1u);
+    let hist_height = max(flame.hist_height, 1u);
     
-    if pixel_x >= HIST_WIDTH || pixel_y >= HIST_HEIGHT {
+    if pixel_x >= hist_width || pixel_y >= hist_height {
         return;
     }
     
     // Flip Y for wgpu (top-left origin, Y increases downward) vs OpenGL (Y increases upward)
     // Raw histogram is stored in OpenGL-style coordinates, so we flip when reading
-    let hist_y_flipped = HIST_HEIGHT - 1u - pixel_y;
-    let pixel_idx_base = (hist_y_flipped * HIST_WIDTH + pixel_x) * 4u;
+    let hist_y_flipped = hist_height - 1u - pixel_y;
+    let pixel_idx_base = (hist_y_flipped * hist_width + pixel_x) * 4u;
     
     // Read accumulated R, G, B, count from histogram (4 u32s per pixel)
     var r_accum = f32(histogram[pixel_idx_base + 0u]);
@@ -93,9 +94,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     g_accum *= up_scale_factor;
     b_accum *= up_scale_factor;
     count_accum *= up_scale_factor;
-    
-    // Read flame parameters from flat array
-    let flame = read_flame();
     
     // Apply tone mapping
     let flame_params = vec3<f32>(flame.brightness, flame.gamma, flame.vibrancy);
