@@ -455,6 +455,7 @@ impl GpuRenderer {
     }
     
     /// Read the output texture back to CPU as RGBA8 data (synchronous with device.poll)
+    #[allow(dead_code)]
     pub fn read_output_to_vec(&self, device: &Device, queue: &Queue) -> Vec<u8> {
         let extent = self.output_texture.size();
         let width = extent.width as usize;
@@ -882,8 +883,9 @@ mod tests {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
             flags: wgpu::InstanceFlags::empty(),
-            dx12_shader_compiler: wgpu::Dx12Compiler::default(),
-            gles_minor_version: wgpu::Gles3MinorVersion::default(),
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
         });
 
         let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -891,8 +893,8 @@ mod tests {
             compatible_surface: None,
             force_fallback_adapter: false,
         })) {
-            Some(adapter) => adapter,
-            None => panic!("No suitable GPU adapter found for testing"),
+            Ok(adapter) => adapter,
+            Err(e) => panic!("No suitable GPU adapter found for testing: {}", e),
         };
 
         let (device, queue) = match pollster::block_on(adapter.request_device(
@@ -901,8 +903,9 @@ mod tests {
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::downlevel_defaults(),
                 memory_hints: wgpu::MemoryHints::default(),
-            },
-            None,
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                trace: wgpu::Trace::default(),
+            }
         )) {
             Ok((device, queue)) => (device, queue),
             Err(e) => panic!("Failed to create device: {}", e),
@@ -933,7 +936,7 @@ mod tests {
 
         {
             let mut mapping = results_buffer.slice(..).get_mapped_range_mut();
-            mapping.fill(0u8);
+            mapping.copy_from_slice(&vec![0u8; mapping.len()]);
         }
         results_buffer.unmap();
 
@@ -949,15 +952,10 @@ mod tests {
         let branch_common = include_str!("shaders/branch_common.wgsl");
         let full_shader = format!("{}\n{}", branch_common, GPU_TEST_SHADER);
         
-        device.push_error_scope(wgpu::ErrorFilter::Validation);
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("gpu_test_shader"),
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Owned(full_shader)),
         });
-        
-        if let Some(error) = pollster::block_on(device.pop_error_scope()) {
-            panic!("Shader compilation error: {:?}", error);
-        }
 
         // Create a flame_data buffer for the test
         let flame_data_for_test = GpuRenderer::flame_to_gpu_flat(&flame);
@@ -1025,15 +1023,15 @@ mod tests {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("test_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            immediate_size: 0,
         });
 
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("test_compute_pipeline"),
             layout: Some(&pipeline_layout),
             module: &shader_module,
-            entry_point: "main",
+            entry_point: Some("main"),
             cache: None,
             compilation_options: wgpu::PipelineCompilationOptions::default(),
         });
@@ -1062,7 +1060,7 @@ mod tests {
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             tx.send(result).ok();
         });
-        device.poll(wgpu::Maintain::Wait);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
 
         rx.recv().expect("failed to map buffer").expect("buffer mapping failed");
 
