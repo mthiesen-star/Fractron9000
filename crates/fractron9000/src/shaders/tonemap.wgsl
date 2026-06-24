@@ -70,8 +70,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let pixel_x = gid.x;
     let pixel_y = gid.y;
     let flame = read_flame();
-    let hist_width = max(render_params[0u], 1u);
-    let hist_height = max(render_params[1u], 1u);
+    let params = unpack_render_params(vec4<u32>(render_params[0u], render_params[1u], render_params[2u], 0u));
+    let hist_width = params.hist_width;
+    let hist_height = params.hist_height;
     
     if pixel_x >= hist_width || pixel_y >= hist_height {
         return;
@@ -98,7 +99,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     
     // Apply tone mapping
     let flame_params = vec3<f32>(flame.brightness, flame.gamma, flame.vibrancy);
-    let mapped = tone_map(r_accum, g_accum, b_accum, count_accum, flame_params, flame.total_iterations);
+    let mapped = tone_map(r_accum, g_accum, b_accum, count_accum, flame_params, params.total_iterations);
     
     // Blend with background
     let bg = flame.background.xyz;

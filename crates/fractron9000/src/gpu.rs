@@ -5,6 +5,8 @@ use wgpu::util::DeviceExt;
 use glam::Mat3;
 use fractal_core::flame::Flame;
 
+const DEFAULT_TOTAL_ITERATIONS: u32 = 100000000;
+
 // ============================================================================
 // GPU BUFFER STRUCTURES (internal helpers only - no repr(C) needed)
 // ============================================================================
@@ -111,7 +113,7 @@ impl GpuRenderer {
         eprintln!("  [4-7]:   camera_transform.row1");
         eprintln!("  [8-11]:  params (brightness, gamma, vibrancy, padding)");
         eprintln!("  [12-15]: background (r, g, b, a)");
-        eprintln!("  [16-17]: branch_count, total_iterations (as bitcast f32)");
+        eprintln!("  [16-17]: branch_count, reserved (as bitcast f32)");
         eprintln!();
         eprintln!("Branches buffer: {} f32s ({} bytes) - {} branches", 
                  gpu_branches.len(), gpu_branches.len() * 4, gpu_branches.len() / 18);
@@ -125,7 +127,7 @@ impl GpuRenderer {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
 
-        let render_params = [output_width, output_height];
+        let render_params = [output_width, output_height, DEFAULT_TOTAL_ITERATIONS];
         let render_params_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
             label: Some("render_params_ssbo"),
             contents: bytemuck::cast_slice(&render_params),
@@ -797,7 +799,7 @@ impl GpuRenderer {
             ],
         });
 
-        let resized_render_params = [new_width, new_height];
+        let resized_render_params = [new_width, new_height, DEFAULT_TOTAL_ITERATIONS];
         queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&resized_render_params));
 
         self.histogram_buffer = histogram_buffer;
@@ -826,11 +828,10 @@ impl GpuRenderer {
     /// [11]:    _params_padding
     /// [12-15]: background (r, g, b, a)
     /// [16]:    branch_count (bitcast as f32)
-    /// [17]:    total_iterations (bitcast as f32)
+    /// [17]:    reserved (bitcast as f32)
     fn flame_to_gpu_flat(flame: &Flame) -> Vec<f32> {
         let camera_transform = GpuAffine::from_mat3(flame.camera_transform);
         let branch_count = flame.branches.len() as u32;
-        let total_iterations = 100000000u32; // Scale based on ~65M iterations/frame at 60 FPS
         
         vec![
             // camera_transform.row0 (4 f32s)
@@ -859,7 +860,7 @@ impl GpuRenderer {
             
             // counters (2 f32s with bitcast u32s)
             f32::from_bits(branch_count),
-            f32::from_bits(total_iterations),
+            0.0,
         ]
     }
     

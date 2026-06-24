@@ -319,8 +319,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         
         // Map from normalized screen space [-1, 1] to pixel coordinates [0, hist_width) x [0, hist_height)
         // Note: Y-flip is handled by tonemap shader at display time, not here
-        let hist_width = max(render_params[0u], 1u);
-        let hist_height = max(render_params[1u], 1u);
+        let params = unpack_render_params(vec4<u32>(render_params[0u], render_params[1u], render_params[2u], 0u));
+        let hist_width = params.hist_width;
+        let hist_height = params.hist_height;
         let hist_x = u32(clamp((screen_pos.x + 1.0) * 0.5 * f32(hist_width), 0.0, f32(hist_width - 1u)));
         let hist_y = u32(clamp((screen_pos.y + 1.0) * 0.5 * f32(hist_height), 0.0, f32(hist_height - 1u)));
         

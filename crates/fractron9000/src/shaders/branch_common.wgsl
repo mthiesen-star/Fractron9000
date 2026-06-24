@@ -13,6 +13,11 @@ struct FlameData {
     vibrancy: f32,
     background: vec4<f32>,
     branch_count: u32,
+}
+
+struct RenderParams {
+    hist_width: u32,
+    hist_height: u32,
     total_iterations: u32,
 }
 
@@ -45,7 +50,7 @@ fn apply_affine(p: vec2<f32>, t: Affine) -> vec2<f32> {
 /// [11]:    _params_padding
 /// [12-15]: background (r, g, b, a)
 /// [16]:    branch_count (bitcast as f32)
-/// [17]:    total_iterations (bitcast as f32)
+/// [17]:    reserved
 fn read_flame() -> FlameData {
     var flame: FlameData;
     
@@ -78,9 +83,21 @@ fn read_flame() -> FlameData {
     
     // counters [16-17] (bitcast from f32)
     flame.branch_count = bitcast<u32>(flame_data[16u]);
-    flame.total_iterations = bitcast<u32>(flame_data[17u]);
     
     return flame;
+}
+
+/// Unpack runtime render parameters from a compact u32 payload.
+/// Layout:
+/// [0]: hist_width
+/// [1]: hist_height
+/// [2]: total_iterations
+fn unpack_render_params(raw: vec4<u32>) -> RenderParams {
+    var params: RenderParams;
+    params.hist_width = max(raw.x, 1u);
+    params.hist_height = max(raw.y, 1u);
+    params.total_iterations = max(raw.z, 1u);
+    return params;
 }
 
 /// Read a branch from the flat f32 buffer (18 elements per branch).
