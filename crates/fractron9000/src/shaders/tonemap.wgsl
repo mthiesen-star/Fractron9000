@@ -6,6 +6,7 @@
 @group(0) @binding(1) var<storage, read> histogram: array<u32>;
 @group(0) @binding(2) var<storage, read> branch_data: array<f32>;  // Needed by branch_common, not used by tonemap
 @group(0) @binding(3) var output_texture: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(4) var<storage, read> render_params: array<u32>;
 
 const PIXEL_AREA: f32 = 1.0;
 const C1: f32 = 1.0;
@@ -69,8 +70,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let pixel_x = gid.x;
     let pixel_y = gid.y;
     let flame = read_flame();
-    let hist_width = max(flame.hist_width, 1u);
-    let hist_height = max(flame.hist_height, 1u);
+    let hist_width = max(render_params[0u], 1u);
+    let hist_height = max(render_params[1u], 1u);
     
     if pixel_x >= hist_width || pixel_y >= hist_height {
         return;

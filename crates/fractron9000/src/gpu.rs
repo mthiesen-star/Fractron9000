@@ -47,6 +47,7 @@ pub struct GpuRenderer {
     
     // Buffers
     flame_buffer: Buffer,
+    render_params_buffer: Buffer,
     branches_buffer: Buffer,
     variations_buffer: Buffer,
     histogram_buffer: Buffer,
@@ -99,7 +100,7 @@ impl GpuRenderer {
         });
         
         // Build GPU buffer data from Rust structures
-        let gpu_flame_flat = Self::flame_to_gpu_flat(flame, output_width, output_height);
+        let gpu_flame_flat = Self::flame_to_gpu_flat(flame);
         let (gpu_branches, gpu_variations) = Self::flame_to_gpu_branches(flame);
         
         // DEBUG: Print buffer layout
@@ -111,7 +112,6 @@ impl GpuRenderer {
         eprintln!("  [8-11]:  params (brightness, gamma, vibrancy, padding)");
         eprintln!("  [12-15]: background (r, g, b, a)");
         eprintln!("  [16-17]: branch_count, total_iterations (as bitcast f32)");
-        eprintln!("  [18-19]: hist_width, hist_height (as bitcast f32)");
         eprintln!();
         eprintln!("Branches buffer: {} f32s ({} bytes) - {} branches", 
                  gpu_branches.len(), gpu_branches.len() * 4, gpu_branches.len() / 18);
@@ -122,6 +122,13 @@ impl GpuRenderer {
         let flame_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
             label: Some("flame_ssbo"),
             contents: bytemuck::cast_slice(&gpu_flame_flat),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+
+        let render_params = [output_width, output_height];
+        let render_params_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("render_params_ssbo"),
+            contents: bytemuck::cast_slice(&render_params),
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
         
@@ -294,6 +301,16 @@ impl GpuRenderer {
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         
@@ -307,6 +324,7 @@ impl GpuRenderer {
                 BindGroupEntry { binding: 3, resource: histogram_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&palette_texture_view) },
                 BindGroupEntry { binding: 5, resource: BindingResource::Sampler(&palette_sampler) },
+                BindGroupEntry { binding: 6, resource: render_params_buffer.as_entire_binding() },
             ],
         });
         
@@ -367,6 +385,16 @@ impl GpuRenderer {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         
@@ -378,6 +406,7 @@ impl GpuRenderer {
                 BindGroupEntry { binding: 1, resource: histogram_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 2, resource: branches_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&output_texture_view) },
+                BindGroupEntry { binding: 4, resource: render_params_buffer.as_entire_binding() },
             ],
         });
         
@@ -398,6 +427,7 @@ impl GpuRenderer {
             iterate_pipeline,
             tonemap_pipeline,
             flame_buffer,
+            render_params_buffer,
             branches_buffer,
             variations_buffer,
             histogram_buffer,
@@ -672,6 +702,16 @@ impl GpuRenderer {
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -685,6 +725,7 @@ impl GpuRenderer {
                 BindGroupEntry { binding: 3, resource: histogram_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.palette_texture_view) },
                 BindGroupEntry { binding: 5, resource: BindingResource::Sampler(&self.palette_sampler) },
+                BindGroupEntry { binding: 6, resource: self.render_params_buffer.as_entire_binding() },
             ],
         });
 
@@ -731,6 +772,16 @@ impl GpuRenderer {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -742,11 +793,12 @@ impl GpuRenderer {
                 BindGroupEntry { binding: 1, resource: histogram_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 2, resource: self.branches_buffer.as_entire_binding() },
                 BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&output_texture_view) },
+                BindGroupEntry { binding: 4, resource: self.render_params_buffer.as_entire_binding() },
             ],
         });
 
-        let resized_dims = [f32::from_bits(new_width), f32::from_bits(new_height)];
-        queue.write_buffer(&self.flame_buffer, (18 * 4) as u64, bytemuck::cast_slice(&resized_dims));
+        let resized_render_params = [new_width, new_height];
+        queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&resized_render_params));
 
         self.histogram_buffer = histogram_buffer;
         self.output_texture = output_texture;
@@ -763,9 +815,9 @@ impl GpuRenderer {
     // CONVERSION HELPERS
     // ========================================================================
     
-    /// Pack Flame into flat f32 array (20 elements) for storage buffer transmission.
+    /// Pack Flame into flat f32 array (18 elements) for storage buffer transmission.
     /// 
-    /// Layout (20 f32 elements):
+    /// Layout (18 f32 elements):
     /// [0-3]:   camera_transform.row0 (a, b, e, _padding)
     /// [4-7]:   camera_transform.row1 (c, d, f, _padding)
     /// [8]:     brightness
@@ -775,9 +827,7 @@ impl GpuRenderer {
     /// [12-15]: background (r, g, b, a)
     /// [16]:    branch_count (bitcast as f32)
     /// [17]:    total_iterations (bitcast as f32)
-    /// [18]:    hist_width (bitcast as f32)
-    /// [19]:    hist_height (bitcast as f32)
-    fn flame_to_gpu_flat(flame: &Flame, hist_width: u32, hist_height: u32) -> Vec<f32> {
+    fn flame_to_gpu_flat(flame: &Flame) -> Vec<f32> {
         let camera_transform = GpuAffine::from_mat3(flame.camera_transform);
         let branch_count = flame.branches.len() as u32;
         let total_iterations = 100000000u32; // Scale based on ~65M iterations/frame at 60 FPS
@@ -807,11 +857,9 @@ impl GpuRenderer {
             flame.background.z,
             flame.background.w,
             
-            // counters + dimensions (4 f32s with bitcast u32s)
+            // counters (2 f32s with bitcast u32s)
             f32::from_bits(branch_count),
             f32::from_bits(total_iterations),
-            f32::from_bits(hist_width),
-            f32::from_bits(hist_height),
         ]
     }
     
@@ -1171,7 +1219,7 @@ mod tests {
         });
 
         // Create a flame_data buffer for the test
-        let flame_data_for_test = GpuRenderer::flame_to_gpu_flat(&flame, 1024, 768);
+        let flame_data_for_test = GpuRenderer::flame_to_gpu_flat(&flame);
         let flame_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("test_flame_data"),
             contents: bytemuck::cast_slice(&flame_data_for_test),

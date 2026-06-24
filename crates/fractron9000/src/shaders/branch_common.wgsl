@@ -14,8 +14,6 @@ struct FlameData {
     background: vec4<f32>,
     branch_count: u32,
     total_iterations: u32,
-    hist_width: u32,
-    hist_height: u32,
 }
 
 struct BranchData {
@@ -36,7 +34,7 @@ fn apply_affine(p: vec2<f32>, t: Affine) -> vec2<f32> {
     );
 }
 
-/// Read flame parameters from flat f32 array (20 elements).
+/// Read flame parameters from flat f32 array (18 elements).
 /// Each shader must declare: @group(0) @binding(0) var<storage, read> flame_data: array<f32>;
 /// Layout:
 /// [0-3]:   camera_transform.row0 (a, b, e, padding)
@@ -48,8 +46,6 @@ fn apply_affine(p: vec2<f32>, t: Affine) -> vec2<f32> {
 /// [12-15]: background (r, g, b, a)
 /// [16]:    branch_count (bitcast as f32)
 /// [17]:    total_iterations (bitcast as f32)
-/// [18]:    hist_width (bitcast as f32)
-/// [19]:    hist_height (bitcast as f32)
 fn read_flame() -> FlameData {
     var flame: FlameData;
     
@@ -83,8 +79,6 @@ fn read_flame() -> FlameData {
     // counters [16-17] (bitcast from f32)
     flame.branch_count = bitcast<u32>(flame_data[16u]);
     flame.total_iterations = bitcast<u32>(flame_data[17u]);
-    flame.hist_width = bitcast<u32>(flame_data[18u]);
-    flame.hist_height = bitcast<u32>(flame_data[19u]);
     
     return flame;
 }
