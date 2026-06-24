@@ -47,6 +47,8 @@ impl FractronApp {
                     &device,
                     &queue,
                     &flame,
+                    1024,
+                    768,
                 ) {
                     Ok(r) => (Some(r), Some(device), Some(queue)),
                     Err(e) => {
@@ -163,6 +165,10 @@ impl FractronApp {
         let (left_panel_rect, splitter_rect, viewport_rect) =
             Self::split_content_rects(content_rect, self.left_panel_width, splitter_width);
 
+        let pixels_per_point = ui.ctx().pixels_per_point();
+        let target_width = (viewport_rect.width() * pixels_per_point).round().max(1.0) as u32;
+        let target_height = (viewport_rect.height() * pixels_per_point).round().max(1.0) as u32;
+
         let mut status_right = "Ready";
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(left_panel_rect), |ui| {
@@ -198,14 +204,26 @@ impl FractronApp {
         });
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(viewport_rect), |ui| {
-            if let Some(renderer) = &self.gpu_renderer {
+            if let Some(renderer) = &mut self.gpu_renderer {
                 if let (Some(device), Some(queue)) = (&self.device, &self.queue) {
+                    if renderer.needs_resize(target_width, target_height) {
+                        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+                        if let Err(e) = renderer.resize(device, queue, target_width, target_height) {
+                            eprintln!("Failed to resize renderer output: {}", e);
+                            ui.label("Resize failed. See console for details.");
+                            status_right = "Resize error";
+                            return;
+                        }
+                        self.output_texture_id = None;
+                    }
+
                     Self::advance_renderer_frame(renderer, device, queue);
                     self.iter_count += 1;
                     status_right = Self::present_output_texture(
                         ui,
                         renderer,
                         device,
+                        viewport_rect.size(),
                         _frame,
                         &mut self.output_texture_id,
                     );
@@ -255,6 +273,7 @@ impl FractronApp {
         ui: &mut egui::Ui,
         renderer: &GpuRenderer,
         device: &Device,
+        viewport_size: egui::Vec2,
         frame: &mut eframe::Frame,
         output_texture_id: &mut Option<egui::TextureId>,
     ) -> &'static str {
@@ -271,8 +290,7 @@ impl FractronApp {
                 id
             };
 
-            let (width, height) = renderer.output_size();
-            ui.image((texture_id, egui::vec2(width as f32, height as f32)));
+            ui.image((texture_id, viewport_size));
             "Rendering"
         } else {
             ui.label("Render state unavailable");

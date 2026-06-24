@@ -35,11 +35,6 @@ pub struct GpuVariEntry {
     pub weight: f32,
 }
 
-
-
-const HIST_WIDTH: u32 = 1024;
-const HIST_HEIGHT: u32 = 768;
-
 // ============================================================================
 // GPU RENDERER
 // ============================================================================
@@ -64,6 +59,8 @@ pub struct GpuRenderer {
     // Output texture
     output_texture: Texture,
     output_texture_view: TextureView,
+    output_width: u32,
+    output_height: u32,
     
     // Bind groups
     iterate_bind_group: BindGroup,
@@ -71,8 +68,17 @@ pub struct GpuRenderer {
 }
 
 impl GpuRenderer {
-    /// Initialize GPU renderer (must be called with initialized wgpu device/queue)
-    pub fn new(device: &Device, queue: &Queue, flame: &Flame) -> Result<Self, String> {
+    /// Initialize GPU renderer with output dimensions in physical pixels.
+    pub fn new(
+        device: &Device,
+        queue: &Queue,
+        flame: &Flame,
+        output_width: u32,
+        output_height: u32,
+    ) -> Result<Self, String> {
+        let output_width = output_width.clamp(32, 8192);
+        let output_height = output_height.clamp(32, 8192);
+
         // Compile shaders with shared branch_common utilities concatenated
         let branch_common = include_str!("shaders/branch_common.wgsl");
         let iterate_src = include_str!("shaders/iterate.wgsl");
@@ -133,7 +139,7 @@ impl GpuRenderer {
         let histogram_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("histogram_ssbo"),
             // 4 u32s per pixel: R, G, B, count (total 16 bytes per pixel)
-            size: (HIST_WIDTH * HIST_HEIGHT * 16) as u64,
+            size: (output_width * output_height * 16) as u64,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: true,
         });
@@ -150,8 +156,8 @@ impl GpuRenderer {
         let output_texture = device.create_texture(&TextureDescriptor {
             label: Some("output_texture"),
             size: Extent3d {
-                width: HIST_WIDTH,
-                height: HIST_HEIGHT,
+                width: output_width,
+                height: output_height,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -399,6 +405,8 @@ impl GpuRenderer {
             palette_sampler,
             output_texture,
             output_texture_view,
+            output_width,
+            output_height,
             iterate_bind_group,
             tonemap_bind_group,
         })
@@ -406,7 +414,11 @@ impl GpuRenderer {
     
     pub fn iterate(&self, queue: &Queue, device: &Device, num_threads: u32) {
         // Clear histogram to zeros for this frame (4 u32s per pixel: R, G, B, count)
-        queue.write_buffer(&self.histogram_buffer, 0, &vec![0u8; (HIST_WIDTH * HIST_HEIGHT * 16) as usize]);
+        queue.write_buffer(
+            &self.histogram_buffer,
+            0,
+            &vec![0u8; (self.output_width * self.output_height * 16) as usize],
+        );
         
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("iterate_encoder"),
@@ -437,7 +449,7 @@ impl GpuRenderer {
             });
             cpass.set_pipeline(&self.tonemap_pipeline);
             cpass.set_bind_group(0, &self.tonemap_bind_group, &[]);
-            cpass.dispatch_workgroups((HIST_WIDTH + 15) / 16, (HIST_HEIGHT + 15) / 16, 1);
+            cpass.dispatch_workgroups((self.output_width + 15) / 16, (self.output_height + 15) / 16, 1);
         }
         
         queue.submit(std::iter::once(encoder.finish()));
@@ -545,9 +557,202 @@ impl GpuRenderer {
         result
     }
     
-    pub fn output_size(&self) -> (u32, u32) {
-        let extent = self.output_texture.size();
-        (extent.width, extent.height)
+    pub fn needs_resize(&self, target_width: u32, target_height: u32) -> bool {
+        let target_width = target_width.clamp(32, 8192);
+        let target_height = target_height.clamp(32, 8192);
+        self.output_width != target_width || self.output_height != target_height
+    }
+
+    pub fn resize(
+        &mut self,
+        device: &Device,
+        _queue: &Queue,
+        new_width: u32,
+        new_height: u32,
+    ) -> Result<(), String> {
+        let new_width = new_width.clamp(32, 8192);
+        let new_height = new_height.clamp(32, 8192);
+
+        if !self.needs_resize(new_width, new_height) {
+            return Ok(());
+        }
+
+        eprintln!(
+            "Resizing renderer output from {}x{} to {}x{}",
+            self.output_width, self.output_height, new_width, new_height
+        );
+
+        let histogram_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("histogram_ssbo"),
+            size: (new_width * new_height * 16) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: true,
+        });
+
+        {
+            let mut mapping = histogram_buffer.slice(..).get_mapped_range_mut();
+            let zeros = vec![0u8; mapping.len()];
+            mapping.copy_from_slice(&zeros);
+        }
+        histogram_buffer.unmap();
+
+        let output_texture = device.create_texture(&TextureDescriptor {
+            label: Some("output_texture"),
+            size: Extent3d {
+                width: new_width,
+                height: new_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let output_texture_view = output_texture.create_view(&TextureViewDescriptor::default());
+
+        let iterate_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("iterate_bgl"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+        let iterate_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("iterate_bg"),
+            layout: &iterate_bind_group_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: self.flame_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 1, resource: self.branches_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 2, resource: self.variations_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 3, resource: histogram_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.palette_texture_view) },
+                BindGroupEntry { binding: 5, resource: BindingResource::Sampler(&self.palette_sampler) },
+            ],
+        });
+
+        let tonemap_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("tonemap_bgl"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: TextureFormat::Rgba8Unorm,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let tonemap_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("tonemap_bg"),
+            layout: &tonemap_bind_group_layout,
+            entries: &[
+                BindGroupEntry { binding: 0, resource: self.flame_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 1, resource: histogram_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 2, resource: self.branches_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 3, resource: BindingResource::TextureView(&output_texture_view) },
+            ],
+        });
+
+        self.histogram_buffer = histogram_buffer;
+        self.output_texture = output_texture;
+        self.output_texture_view = output_texture_view;
+        self.output_width = new_width;
+        self.output_height = new_height;
+        self.iterate_bind_group = iterate_bind_group;
+        self.tonemap_bind_group = tonemap_bind_group;
+
+        Ok(())
     }
     
     // ========================================================================
