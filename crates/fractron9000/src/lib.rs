@@ -4,6 +4,7 @@ mod gpu;
 use gpu::GpuRenderer;
 use fractal_core::flame::Flame;
 use wgpu::{Device, Queue};
+use glam::Mat3;
 
 #[allow(dead_code)]
 pub struct FractronApp {
@@ -15,6 +16,9 @@ pub struct FractronApp {
     rendered_image: Option<egui::ColorImage>,
     texture_handle: Option<egui::TextureHandle>,
     output_texture_id: Option<egui::TextureId>,
+    is_panning: bool,
+    pan_start: Option<egui::Pos2>,
+    pan_camera_start: Option<Mat3>,
 }
 
 impl FractronApp {
@@ -64,6 +68,9 @@ impl FractronApp {
             rendered_image: None,
             texture_handle: None,
             output_texture_id: None,
+            is_panning: false,
+            pan_start: None,
+            pan_camera_start: None,
         }
     }
 }
@@ -71,6 +78,8 @@ impl FractronApp {
 impl eframe::App for FractronApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         ui.heading("Fractron 9000");
+
+
 
         if let Some(renderer) = &self.gpu_renderer {
             if let (Some(device), Some(queue)) = (&self.device, &self.queue) {
