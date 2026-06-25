@@ -51,6 +51,39 @@ This keeps it fully unit-testable and allows a CPU fallback renderer to live the
    write to an RGBA texture.
 3. **Display** (wgpu render pipeline) — fullscreen quad samples the tone-mapped texture.
 
+## Coordinate Spaces
+
+Use these names consistently in code, comments, and debugging output.
+
+1. **Fractal Space**
+  - Continuous floating-point 2D coordinates where the chaos-game iteration runs.
+  - Branch transforms and variations operate in this space.
+
+2. **Screen Space**
+  - Continuous floating-point 2D coordinates after applying `camera_transform`.
+  - Intended visible region is normalized to approximately `[-1, 1]` in each axis.
+  - Mapping: `screen = camera_transform * fractal` (affine 2D form).
+  - Y Axis Orientation: Increases toward the *top* of the screen.
+
+3. **Histogram Space**
+  - Discrete integer bin coordinates used for accumulation.
+  - Derived from Screen Space via normalization and raster mapping:
+    - `hist_x = clamp((screen_x + 1) * 0.5 * width,  0, width  - 1)`
+    - `hist_y = clamp((screen_y + 1) * 0.5 * height, 0, height - 1)`
+  - Y Axis Orientation: Increases toward the *top* of the screen.
+
+4. **UI Space**
+  - egui point-space coordinates (logical UI units), not raw texture pixels.
+  - Input pointer positions and viewport rectangles are expressed in this space.
+  - Due to DPI scaling (`pixels_per_point`), one histogram texel does not necessarily equal one UI unit.
+  - Y Axis Orientation: Increases toward the *bottom* of the screen. 
+
+### Y-Axis Convention Note
+
+- Due to common mathematical conventions, the chaos game takes place in a coordinate system where positive Y points up.
+- egui and most other UI systems typically have the Y axis pointing down.
+- The UI space transform is responsible for flipping the Y axis when presenting the tone-mapped result. 
+
 ### Histogram Accumulation
 
 Uses fixed-point integer accumulation: float color values are scaled and stored as `u32`

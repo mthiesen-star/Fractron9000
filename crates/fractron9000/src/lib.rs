@@ -369,7 +369,9 @@ impl FractronApp {
                 id
             };
 
-            ui.image((texture_id, viewport_size));
+            // Display orientation is handled in UI by flipping V coordinates.
+            let uv = egui::Rect::from_min_max(egui::pos2(0.0, 1.0), egui::pos2(1.0, 0.0));
+            ui.add(egui::Image::new((texture_id, viewport_size)).uv(uv));
             "Rendering"
         } else {
             ui.label("Render state unavailable");

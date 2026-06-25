@@ -78,10 +78,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     
-    // Flip Y for wgpu (top-left origin, Y increases downward) vs OpenGL (Y increases upward)
-    // Raw histogram is stored in OpenGL-style coordinates, so we flip when reading
-    let hist_y_flipped = hist_height - 1u - pixel_y;
-    let pixel_idx_base = (hist_y_flipped * hist_width + pixel_x) * 4u;
+    let pixel_idx_base = (pixel_y * hist_width + pixel_x) * 4u;
     
     // Read accumulated R, G, B, count from histogram (4 u32s per pixel)
     var r_accum = f32(histogram[pixel_idx_base + 0u]);
