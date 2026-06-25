@@ -1,7 +1,7 @@
 [package]
 name = "fractron9000"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # cdylib is required for the WASM build (produces the .wasm file).
 # rlib allows the native binary (main.rs) to link against the library.

@@ -16,7 +16,6 @@ pub struct FractronApp {
     rendered_image: Option<egui::ColorImage>,
     texture_handle: Option<egui::TextureHandle>,
     output_texture_id: Option<egui::TextureId>,
-    is_panning: bool,
     pan_start: Option<egui::Pos2>,
     pan_camera_start: Option<Mat3>,
     left_panel_width: f32,
@@ -71,7 +70,6 @@ impl FractronApp {
             rendered_image: None,
             texture_handle: None,
             output_texture_id: None,
-            is_panning: false,
             pan_start: None,
             pan_camera_start: None,
             left_panel_width: 128.0,
@@ -204,6 +202,28 @@ impl FractronApp {
         });
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(viewport_rect), |ui| {
+            ui.input(|i| {
+                if i.pointer.button_pressed(egui::PointerButton::Middle) 
+                    && let Some(pos) = i.pointer.interact_pos()
+                    && viewport_rect.contains(pos)
+                {
+                    self.pan_start = Some(pos);
+                    self.pan_camera_start = Some(self.flame.camera_transform);
+                }
+
+                if i.pointer.button_released(egui::PointerButton::Middle) {
+                    self.pan_start = None;
+                    self.pan_camera_start = None;
+                }
+
+                if let (Some(start_pos), Some(camera_start), Some(current_pos)) = (self.pan_start, self.pan_camera_start, i.pointer.interact_pos()) {
+                    let delta = current_pos - start_pos;
+                    let pan_speed = 0.005;
+                    let translation = Mat3::from_translation(glam::Vec2::new(-delta.x * pan_speed, delta.y * pan_speed));
+                    self.flame.camera_transform = translation * camera_start;
+                }
+            });
+
             if let Some(renderer) = &mut self.gpu_renderer {
                 if let (Some(device), Some(queue)) = (&self.device, &self.queue) {
                     if renderer.needs_resize(target_width, target_height) {
