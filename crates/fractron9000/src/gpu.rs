@@ -444,6 +444,17 @@ impl GpuRenderer {
             tonemap_bind_group,
         })
     }
+
+    /// Upload updated flame parameters to GPU storage buffer.
+    ///
+    /// This updates fields packed into the flat flame buffer, including camera transform
+    /// and tone-mapping parameters.
+    pub fn update_flame(&self, queue: &Queue, flame: &Flame) {
+        let gpu_flame_flat = Self::flame_to_gpu_flat(flame);
+        queue.write_buffer(&self.flame_buffer, 0, bytemuck::cast_slice(&gpu_flame_flat));
+    }
+
+    
     
     pub fn iterate(&self, queue: &Queue, device: &Device, num_threads: u32) {
         // Clear histogram to zeros for this frame (4 u32s per pixel: R, G, B, count)

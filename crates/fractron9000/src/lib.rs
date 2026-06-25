@@ -167,6 +167,14 @@ impl FractronApp {
         let target_width = (viewport_rect.width() * pixels_per_point).round().max(1.0) as u32;
         let target_height = (viewport_rect.height() * pixels_per_point).round().max(1.0) as u32;
 
+        let dump_state_requested = ui.input(|i| {
+            i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::S)
+        });
+        if dump_state_requested {
+            let pointer_pos = ui.input(|i| i.pointer.interact_pos());
+            self.dump_debug_state(viewport_rect, target_width, target_height, pointer_pos);
+        }
+
         let mut status_right = "Ready";
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(left_panel_rect), |ui| {
@@ -202,6 +210,8 @@ impl FractronApp {
         });
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(viewport_rect), |ui| {
+            let mut flame_dirty = false;
+
             ui.input(|i| {
                 if i.pointer.button_pressed(egui::PointerButton::Middle) 
                     && let Some(pos) = i.pointer.interact_pos()
@@ -219,8 +229,9 @@ impl FractronApp {
                 if let (Some(start_pos), Some(camera_start), Some(current_pos)) = (self.pan_start, self.pan_camera_start, i.pointer.interact_pos()) {
                     let delta = current_pos - start_pos;
                     let pan_speed = 0.005;
-                    let translation = Mat3::from_translation(glam::Vec2::new(-delta.x * pan_speed, delta.y * pan_speed));
+                    let translation = Mat3::from_translation(glam::Vec2::new(delta.x * pan_speed, -delta.y * pan_speed));
                     self.flame.camera_transform = translation * camera_start;
+                    flame_dirty = true;
                 }
             });
 
@@ -235,6 +246,10 @@ impl FractronApp {
                             return;
                         }
                         self.output_texture_id = None;
+                    }
+
+                    if flame_dirty {
+                        renderer.update_flame(queue, &self.flame);
                     }
 
                     Self::advance_renderer_frame(renderer, device, queue);
@@ -258,6 +273,50 @@ impl FractronApp {
         });
 
         status_right
+    }
+
+    fn dump_debug_state(
+        &self,
+        viewport_rect: egui::Rect,
+        target_width: u32,
+        target_height: u32,
+        pointer_pos: Option<egui::Pos2>,
+    ) {
+        let camera = self.flame.camera_transform;
+        let pan_start = self
+            .pan_start
+            .map(|p| format!("{:.1},{:.1}", p.x, p.y))
+            .unwrap_or_else(|| "none".to_string());
+        let pointer = pointer_pos
+            .map(|p| format!("{:.1},{:.1}", p.x, p.y))
+            .unwrap_or_else(|| "none".to_string());
+        let pan_camera_start = self
+            .pan_camera_start
+            .map(|m| format!(
+                "[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}]",
+                m.x_axis.x, m.y_axis.x, m.z_axis.x, m.x_axis.y, m.y_axis.y, m.z_axis.y
+            ))
+            .unwrap_or_else(|| "none".to_string());
+
+        println!(
+            "STATE_DUMP iter={} pointer={} pan_start={} pan_camera_start={} camera=[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}] viewport=[{:.1},{:.1},{:.1},{:.1}] target={}x{}",
+            self.iter_count,
+            pointer,
+            pan_start,
+            pan_camera_start,
+            camera.x_axis.x,
+            camera.y_axis.x,
+            camera.z_axis.x,
+            camera.x_axis.y,
+            camera.y_axis.y,
+            camera.z_axis.y,
+            viewport_rect.left(),
+            viewport_rect.top(),
+            viewport_rect.width(),
+            viewport_rect.height(),
+            target_width,
+            target_height,
+        );
     }
 
     fn split_content_rects(
