@@ -8,8 +8,12 @@ use wgpu::{Device, Queue};
 use glam::{Mat3, Vec2};
 use camera_math::{
     solve_pan_camera_transform,
+    solve_zoom_camera_transform,
+    ui_to_screen_space,
     ui_to_fractal_space,
 };
+
+const ZOOM_SCROLL_SENSITIVITY: f32 = 0.0050;
 
 #[allow(dead_code)]
 pub struct FractronApp {
@@ -230,6 +234,28 @@ impl FractronApp {
                 if i.pointer.button_released(egui::PointerButton::Middle) {
                     self.pan_camera_start = None;
                     self.pan_anchor_fractal = None;
+                }
+
+                let scroll_y = i.smooth_scroll_delta.y;
+                if scroll_y.abs() > f32::EPSILON
+                    && let Some(cursor_pos) = i.pointer.hover_pos()
+                    && viewport_rect.contains(cursor_pos)
+                {
+                    let zoom_factor = (scroll_y * ZOOM_SCROLL_SENSITIVITY).exp();
+                    if let (Some(anchor_fractal), Some(target_screen)) = (
+                        ui_to_fractal_space(viewport_rect, cursor_pos, self.flame.camera_transform),
+                        ui_to_screen_space(viewport_rect, cursor_pos),
+                    ) {
+                        if let Some(next_camera) = solve_zoom_camera_transform(
+                            self.flame.camera_transform,
+                            anchor_fractal,
+                            target_screen,
+                            zoom_factor,
+                        ) {
+                            self.flame.camera_transform = next_camera;
+                            flame_dirty = true;
+                        }
+                    }
                 }
 
                 if let Some(next_camera) = solve_pan_camera_transform(

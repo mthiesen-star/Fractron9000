@@ -45,3 +45,31 @@ pub fn solve_pan_camera_transform(
     next_camera.z_axis.y = translation.y;
     Some(next_camera)
 }
+
+pub fn solve_zoom_camera_transform(
+    camera_start: Mat3,
+    anchor_fractal: Vec2,
+    target_screen: Vec2,
+    zoom_factor: f32,
+) -> Option<Mat3> {
+    if !zoom_factor.is_finite() || zoom_factor <= 0.0 {
+        return None;
+    }
+
+    let mut next_camera = camera_start;
+    next_camera.x_axis.x *= zoom_factor;
+    next_camera.x_axis.y *= zoom_factor;
+    next_camera.y_axis.x *= zoom_factor;
+    next_camera.y_axis.y *= zoom_factor;
+
+    // Keep the cursor-anchored fractal point fixed on screen after scaling.
+    let transformed_anchor = Vec2::new(
+        next_camera.x_axis.x * anchor_fractal.x + next_camera.y_axis.x * anchor_fractal.y,
+        next_camera.x_axis.y * anchor_fractal.x + next_camera.y_axis.y * anchor_fractal.y,
+    );
+    let translation = target_screen - transformed_anchor;
+    next_camera.z_axis.x = translation.x;
+    next_camera.z_axis.y = translation.y;
+
+    Some(next_camera)
+}
