@@ -1,10 +1,15 @@
 mod gpu;
+mod camera_math;
 // Force rebuild marker 7
 
 use gpu::GpuRenderer;
 use fractal_core::flame::Flame;
 use wgpu::{Device, Queue};
 use glam::{Mat3, Vec2};
+use camera_math::{
+    solve_pan_camera_transform,
+    ui_to_fractal_space,
+};
 
 #[allow(dead_code)]
 pub struct FractronApp {
@@ -16,7 +21,6 @@ pub struct FractronApp {
     rendered_image: Option<egui::ColorImage>,
     texture_handle: Option<egui::TextureHandle>,
     output_texture_id: Option<egui::TextureId>,
-    pan_start: Option<egui::Pos2>,
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
     left_panel_width: f32,
@@ -71,7 +75,6 @@ impl FractronApp {
             rendered_image: None,
             texture_handle: None,
             output_texture_id: None,
-            pan_start: None,
             pan_camera_start: None,
             pan_anchor_fractal: None,
             left_panel_width: 128.0,
@@ -219,38 +222,24 @@ impl FractronApp {
                     && let Some(pos) = i.pointer.interact_pos()
                     && viewport_rect.contains(pos)
                 {
-                    self.pan_start = Some(pos);
                     let camera_start = self.flame.camera_transform;
                     self.pan_camera_start = Some(camera_start);
-                    self.pan_anchor_fractal = Self::ui_to_fractal_space(viewport_rect, pos, camera_start);
+                    self.pan_anchor_fractal = ui_to_fractal_space(viewport_rect, pos, camera_start);
                 }
 
                 if i.pointer.button_released(egui::PointerButton::Middle) {
-                    self.pan_start = None;
                     self.pan_camera_start = None;
                     self.pan_anchor_fractal = None;
                 }
 
-                if let (Some(_start_pos), Some(camera_start), Some(anchor_fractal), Some(current_pos)) = (
-                    self.pan_start,
+                if let Some(next_camera) = solve_pan_camera_transform(
                     self.pan_camera_start,
                     self.pan_anchor_fractal,
                     i.pointer.interact_pos(),
+                    viewport_rect,
                 ) {
-                    if let Some(target_screen) = Self::ui_to_screen_space(viewport_rect, current_pos) {
-                        let transformed_anchor = Vec2::new(
-                            camera_start.x_axis.x * anchor_fractal.x + camera_start.y_axis.x * anchor_fractal.y,
-                            camera_start.x_axis.y * anchor_fractal.x + camera_start.y_axis.y * anchor_fractal.y,
-                        );
-                        let translation = target_screen - transformed_anchor;
-
-                        let mut next_camera = camera_start;
-                        next_camera.z_axis.x = translation.x;
-                        next_camera.z_axis.y = translation.y;
-
-                        self.flame.camera_transform = next_camera;
-                        flame_dirty = true;
-                    }
+                    self.flame.camera_transform = next_camera;
+                    flame_dirty = true;
                 }
             });
 
@@ -302,10 +291,6 @@ impl FractronApp {
         pointer_pos: Option<egui::Pos2>,
     ) {
         let camera = self.flame.camera_transform;
-        let pan_start = self
-            .pan_start
-            .map(|p| format!("{:.1},{:.1}", p.x, p.y))
-            .unwrap_or_else(|| "none".to_string());
         let pointer = pointer_pos
             .map(|p| format!("{:.1},{:.1}", p.x, p.y))
             .unwrap_or_else(|| "none".to_string());
@@ -322,10 +307,9 @@ impl FractronApp {
             .unwrap_or_else(|| "none".to_string());
 
         println!(
-            "STATE_DUMP iter={} pointer={} pan_start={} pan_camera_start={} pan_anchor_fractal={} camera=[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}] viewport=[{:.1},{:.1},{:.1},{:.1}] target={}x{}",
+            "STATE_DUMP iter={} pointer={} pan_camera_start={} pan_anchor_fractal={} camera=[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}] viewport=[{:.1},{:.1},{:.1},{:.1}] target={}x{}",
             self.iter_count,
             pointer,
-            pan_start,
             pan_camera_start,
             pan_anchor_fractal,
             camera.x_axis.x,
@@ -341,28 +325,6 @@ impl FractronApp {
             target_width,
             target_height,
         );
-    }
-
-    fn ui_to_screen_space(viewport_rect: egui::Rect, pos: egui::Pos2) -> Option<Vec2> {
-        let width = viewport_rect.width();
-        let height = viewport_rect.height();
-        if width <= 0.0 || height <= 0.0 {
-            return None;
-        }
-
-        let u = (pos.x - viewport_rect.left()) / width;
-        let v = (pos.y - viewport_rect.top()) / height;
-        Some(Vec2::new(2.0 * u - 1.0, 1.0 - 2.0 * v))
-    }
-
-    fn ui_to_fractal_space(viewport_rect: egui::Rect, pos: egui::Pos2, camera: Mat3) -> Option<Vec2> {
-        let screen = Self::ui_to_screen_space(viewport_rect, pos)?;
-        let det = camera.determinant();
-        if det.abs() <= 1e-8 {
-            return None;
-        }
-
-        Some(camera.inverse().transform_point2(screen))
     }
 
     fn split_content_rects(
