@@ -73,3 +73,28 @@ pub fn solve_zoom_camera_transform(
 
     Some(next_camera)
 }
+
+pub fn solve_aspect_camera_transform(camera_start: Mat3, viewport_aspect: f32) -> Option<Mat3> {
+    if !viewport_aspect.is_finite() || viewport_aspect <= 1e-8 {
+        return None;
+    }
+
+    let x_axis = Vec2::new(camera_start.x_axis.x, camera_start.x_axis.y);
+    let y_axis = Vec2::new(camera_start.y_axis.x, camera_start.y_axis.y);
+    let x_len = x_axis.length();
+    let y_len = y_axis.length();
+    if x_len <= 1e-8 || y_len <= 1e-8 {
+        return None;
+    }
+
+    let desired_x_len = y_len / viewport_aspect;
+    if (x_len - desired_x_len).abs() <= 1e-6 {
+        return Some(camera_start);
+    }
+
+    let x_dir = x_axis / x_len;
+    let mut next_camera = camera_start;
+    next_camera.x_axis.x = x_dir.x * desired_x_len;
+    next_camera.x_axis.y = x_dir.y * desired_x_len;
+    Some(next_camera)
+}

@@ -7,6 +7,7 @@ use fractal_core::flame::Flame;
 use wgpu::{Device, Queue};
 use glam::{Mat3, Vec2};
 use camera_math::{
+    solve_aspect_camera_transform,
     solve_pan_camera_transform,
     solve_zoom_camera_transform,
     ui_to_screen_space,
@@ -221,6 +222,15 @@ impl FractronApp {
         ui.scope_builder(egui::UiBuilder::new().max_rect(viewport_rect), |ui| {
             let mut flame_dirty = false;
 
+            let viewport_aspect = viewport_rect.width() / viewport_rect.height().max(1e-6);
+            if let Some(aspect_camera) = solve_aspect_camera_transform(self.flame.camera_transform, viewport_aspect)
+            {
+                if aspect_camera != self.flame.camera_transform {
+                    self.flame.camera_transform = aspect_camera;
+                    flame_dirty = true;
+                }
+            }
+
             ui.input(|i| {
                 if i.pointer.button_pressed(egui::PointerButton::Middle) 
                     && let Some(pos) = i.pointer.interact_pos()
@@ -317,6 +327,9 @@ impl FractronApp {
         pointer_pos: Option<egui::Pos2>,
     ) {
         let camera = self.flame.camera_transform;
+        let viewport_aspect = viewport_rect.width() / viewport_rect.height().max(1e-6);
+        let camera_x_scale = Vec2::new(camera.x_axis.x, camera.x_axis.y).length();
+        let camera_y_scale = Vec2::new(camera.y_axis.x, camera.y_axis.y).length();
         let pointer = pointer_pos
             .map(|p| format!("{:.1},{:.1}", p.x, p.y))
             .unwrap_or_else(|| "none".to_string());
@@ -333,7 +346,7 @@ impl FractronApp {
             .unwrap_or_else(|| "none".to_string());
 
         println!(
-            "STATE_DUMP iter={} pointer={} pan_camera_start={} pan_anchor_fractal={} camera=[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}] viewport=[{:.1},{:.1},{:.1},{:.1}] target={}x{}",
+            "STATE_DUMP iter={} pointer={} pan_camera_start={} pan_anchor_fractal={} camera=[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}] camera_scale=[{:.6},{:.6}] viewport=[{:.1},{:.1},{:.1},{:.1}] viewport_aspect={:.6} target={}x{}",
             self.iter_count,
             pointer,
             pan_camera_start,
@@ -344,10 +357,13 @@ impl FractronApp {
             camera.x_axis.y,
             camera.y_axis.y,
             camera.z_axis.y,
+            camera_x_scale,
+            camera_y_scale,
             viewport_rect.left(),
             viewport_rect.top(),
             viewport_rect.width(),
             viewport_rect.height(),
+            viewport_aspect,
             target_width,
             target_height,
         );
