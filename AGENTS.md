@@ -104,8 +104,12 @@ Parameters: `brightness`, `gamma` (typically 2.0), `vibrancy` (0–1), `backgrou
 
 ## Flame File Format
 
-Apophysis-compatible XML. Must be able to import existing `.flame` files from the
-Legacy project and from the Apophysis/Fractorium ecosystem.
+Apophysis-compatible XML is treated as a legacy interchange format.
+Fractron must support importing and exporting `.flame` files from the Legacy project
+and from the Apophysis/Fractorium ecosystem.
+
+The primary persistence format for Fractron documents is intentionally not decided yet
+and will be specified in a future architectural decision.
 
 Key XML elements:
 - `<flame>` — top-level: camera (size, center, scale, rotate), tone-map params
