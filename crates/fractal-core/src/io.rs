@@ -73,6 +73,81 @@ fn parse_affine_coefs(s: &str) -> Result<Mat3, ParseError> {
     ))
 }
 
+/// Helper to extract xform attributes and create a branch.
+fn parse_xform_element(e: &quick_xml::events::BytesStart, reader: &quick_xml::Reader<std::io::Cursor<&[u8]>>) -> Result<Branch, ParseError> {
+    let mut weight = 1.0_f32;
+    let mut color = 0.5_f32;
+    let mut f9k_color2 = 0.5_f32;
+    let mut coefs_str = String::new();
+    let mut post_str: Option<String> = None;
+    let mut variations: Vec<(Variation, f32)> = Vec::new();
+
+    for attr_result in e.attributes() {
+        let attr = attr_result.map_err(|e| ParseError::Xml(format!("{}", e)))?;
+        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|_| {
+            ParseError::Xml("Invalid UTF-8 in xform attribute key".to_string())
+        })?;
+        let value = attr
+            .decode_and_unescape_value(reader)
+            .map_err(|e| ParseError::Xml(format!("{}", e)))?;
+
+        match key {
+            "weight" => {
+                weight = value.parse().map_err(|_| {
+                    ParseError::InvalidData(format!("Invalid weight: {}", value))
+                })?
+            }
+            "color" => {
+                color = value.parse().map_err(|_| {
+                    ParseError::InvalidData(format!("Invalid color: {}", value))
+                })?
+            }
+            "f9k_color2" => {
+                f9k_color2 = value.parse().map_err(|_| {
+                    ParseError::InvalidData(format!("Invalid f9k_color2: {}", value))
+                })?
+            }
+            "coefs" => coefs_str = value.to_string(),
+            "post" => post_str = Some(value.to_string()),
+            _ => {
+                // Try to match as a variation name
+                if let Ok(var_weight) = value.parse::<f32>() {
+                    if var_weight > 0.0001 {
+                        if let Some(var) = Variation::by_attr_name(key) {
+                            variations.push((var, var_weight));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Default to Linear if no variations specified
+    if variations.is_empty() {
+        variations.push((Variation::Linear, 1.0));
+    }
+
+    // Parse affine transforms
+    let pre_affine = parse_affine_coefs(&coefs_str)?;
+    let post_affine = match post_str {
+        Some(post) => parse_affine_coefs(&post)?,
+        None => Mat3::IDENTITY,
+    };
+
+    // Build branch
+    let var_entries: Vec<VariEntry> =
+        variations.into_iter().map(|(v, w)| VariEntry::new(v, w)).collect();
+
+    Ok(Branch {
+        pre_affine,
+        post_affine,
+        chroma: Vec2::new(color, f9k_color2),
+        weight,
+        color_weight: 0.5,
+        variations: var_entries,
+    })
+}
+
 /// Parse a single flame from XML string (Apophysis format).
 pub fn parse_flame_xml(xml: &str) -> Result<Flame, ParseError> {
     let mut reader = Reader::from_reader(Cursor::new(xml.as_bytes()));
@@ -149,83 +224,19 @@ pub fn parse_flame_xml(xml: &str) -> Result<Flame, ParseError> {
                         }
                     }
                 } else if tag_name_result == "xform" {
-                    // Extract xform attributes and build a branch
-                    let mut weight = 1.0_f32;
-                    let mut color = 0.5_f32;
-                    let mut f9k_color2 = 0.5_f32;
-                    let mut coefs_str = String::new();
-                    let mut post_str: Option<String> = None;
-                    let mut variations: Vec<(Variation, f32)> = Vec::new();
-
-                    for attr_result in e.attributes() {
-                        let attr =
-                            attr_result.map_err(|e| ParseError::Xml(format!("{}", e)))?;
-                        let key = std::str::from_utf8(attr.key.as_ref()).map_err(|_| {
-                            ParseError::Xml("Invalid UTF-8 in xform attribute key".to_string())
-                        })?;
-                        let value = attr
-                            .decode_and_unescape_value(&reader)
-                            .map_err(|e| ParseError::Xml(format!("{}", e)))?;
-
-                        match key {
-                            "weight" => {
-                                weight = value.parse().map_err(|_| {
-                                    ParseError::InvalidData(format!("Invalid weight: {}", value))
-                                })?
-                            }
-                            "color" => {
-                                color = value.parse().map_err(|_| {
-                                    ParseError::InvalidData(format!("Invalid color: {}", value))
-                                })?
-                            }
-                            "f9k_color2" => {
-                                f9k_color2 = value.parse().map_err(|_| {
-                                    ParseError::InvalidData(format!(
-                                        "Invalid f9k_color2: {}",
-                                        value
-                                    ))
-                                })?
-                            }
-                            "coefs" => coefs_str = value.to_string(),
-                            "post" => post_str = Some(value.to_string()),
-                            _ => {
-                                // Try to match as a variation name
-                                if let Ok(var_weight) = value.parse::<f32>() {
-                                    if var_weight > 0.0001 {
-                                        if let Some(var) = Variation::by_attr_name(key) {
-                                            variations.push((var, var_weight));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Default to Linear if no variations specified
-                    if variations.is_empty() {
-                        variations.push((Variation::Linear, 1.0));
-                    }
-
-                    // Parse affine transforms
-                    let pre_affine = parse_affine_coefs(&coefs_str)?;
-                    let post_affine = match post_str {
-                        Some(post) => parse_affine_coefs(&post)?,
-                        None => Mat3::IDENTITY,
-                    };
-
-                    // Build branch
-                    let var_entries: Vec<VariEntry> =
-                        variations.into_iter().map(|(v, w)| VariEntry::new(v, w)).collect();
-
-                    let branch = Branch {
-                        pre_affine,
-                        post_affine,
-                        chroma: Vec2::new(color, f9k_color2),
-                        weight,
-                        color_weight: 0.5,
-                        variations: var_entries,
-                    };
-
+                    let branch = parse_xform_element(&e, &reader)?;
+                    branches.push(branch);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let tag_name_result = e.name()
+                    .as_ref()
+                    .iter()
+                    .map(|&b| b as char)
+                    .collect::<String>();
+                
+                if tag_name_result == "xform" {
+                    let branch = parse_xform_element(&e, &reader)?;
                     branches.push(branch);
                 }
             }
@@ -284,6 +295,53 @@ pub fn parse_flame_xml(xml: &str) -> Result<Flame, ParseError> {
         branches,
         palette: None,
     })
+}
+
+/// Parse all flames from a .flame file (which may contain multiple `<flame>` elements).
+/// Returns a Vec of (flame_name, Flame) tuples.
+/// If a flame fails to parse, it's skipped with an error message.
+pub fn parse_flame_file(contents: &str) -> Result<Vec<(String, Flame)>, ParseError> {
+    let mut result = Vec::new();
+    
+    // Find all <flame ...> ... </flame> blocks
+    let mut pos = 0;
+    while let Some(start) = contents[pos..].find("<flame ") {
+        let start_abs = pos + start;
+        
+        // Find the opening >
+        if let Some(open_bracket) = contents[start_abs..].find('>') {
+            let open_abs = start_abs + open_bracket + 1;
+            
+            // Find closing </flame>
+            if let Some(close) = contents[open_abs..].find("</flame>") {
+                let close_abs = open_abs + close;
+                let flame_xml = &contents[start_abs..=close_abs + 7]; // include </flame>
+                
+                // Try to parse this flame
+                match parse_flame_xml(flame_xml) {
+                    Ok(flame) => {
+                        let name = flame.name.clone();
+                        result.push((name, flame));
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to parse a flame in file: {}", e);
+                    }
+                }
+                
+                pos = close_abs + 8; // Move past </flame>
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    
+    if result.is_empty() {
+        return Err(ParseError::InvalidData("No valid flames found in file".to_string()));
+    }
+
+    Ok(result)
 }
 
 #[cfg(test)]

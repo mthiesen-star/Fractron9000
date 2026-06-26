@@ -2,10 +2,32 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
+    // Parse command-line arguments
+    let args: Vec<String> = std::env::args().collect();
+    let mut load_flame_file: Option<String> = None;
+    let mut load_flame_name: Option<String> = None;
+    
+    let mut i = 1;
+    while i < args.len() {
+        if args[i] == "--loadFlame" && i + 2 < args.len() {
+            load_flame_file = Some(args[i + 1].clone());
+            load_flame_name = Some(args[i + 2].clone());
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    
     eframe::run_native(
         "Fractron 9000",
         eframe::NativeOptions::default(),
-        Box::new(|cc| Ok(Box::new(fractron9000_lib::FractronApp::new(cc)))),
+        Box::new(move |cc| {
+            Ok(Box::new(fractron9000_lib::FractronApp::new(
+                cc,
+                load_flame_file,
+                load_flame_name,
+            )))
+        }),
     )
 }
 

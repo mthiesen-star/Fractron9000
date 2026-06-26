@@ -4,9 +4,39 @@ mod camera_math;
 
 use gpu::GpuRenderer;
 use fractal_core::flame::Flame;
+use fractal_core::io::parse_flame_file;
 use wgpu::{Device, Queue};
 use glam::{Mat3, Vec2};
 use camera_math::*;
+
+/// Load a named flame from a .flame file.
+fn load_flame_from_file(file_path: &str, flame_name: &str) -> Result<Flame, String> {
+    // Read the file
+    let contents = std::fs::read_to_string(file_path)
+        .map_err(|e| format!("Failed to read file '{}': {}", file_path, e))?;
+    
+    // Parse all flames from the file
+    let flames = parse_flame_file(&contents)
+        .map_err(|e| format!("Failed to parse flame file: {}", e))?;
+    
+    // Collect available names for error reporting
+    let available_names: Vec<String> = flames.iter().map(|(n, _)| n.clone()).collect();
+    
+    // Find the requested flame by name
+    for (name, flame) in flames {
+        if name == flame_name {
+            return Ok(flame);
+        }
+    }
+    
+    // If not found, list available flames for debugging
+    Err(format!(
+        "Flame '{}' not found in file. Available: {}",
+        flame_name,
+        available_names.join(", ")
+    ))
+}
+
 
 const ZOOM_SCROLL_SENSITIVITY: f32 = 0.0050;
 
@@ -26,8 +56,26 @@ pub struct FractronApp {
 }
 
 impl FractronApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let flame = Flame::demo();
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        load_flame_file: Option<String>,
+        load_flame_name: Option<String>,
+    ) -> Self {
+        // Try to load flame from file if specified
+        let flame = if let (Some(file_path), Some(name)) = (load_flame_file, load_flame_name) {
+            match load_flame_from_file(&file_path, &name) {
+                Ok(flame) => {
+                    println!("Successfully loaded flame '{}' from {}", name, file_path);
+                    flame
+                }
+                Err(e) => {
+                    eprintln!("Failed to load flame: {}", e);
+                    Flame::demo()
+                }
+            }
+        } else {
+            Flame::demo()
+        };
 
         log::info!("FractronApp::new: wgpu_render_state available = {}", cc.wgpu_render_state.is_some());
         
@@ -483,7 +531,7 @@ pub async fn start() {
         .start(
             canvas,
             web_options,
-            Box::new(|cc| Ok(Box::new(FractronApp::new(cc)))),
+            Box::new(|cc| Ok(Box::new(FractronApp::new(cc, None, None)))),
         )
         .await
         .expect("Failed to start eframe");
