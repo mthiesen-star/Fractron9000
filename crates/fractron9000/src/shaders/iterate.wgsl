@@ -283,10 +283,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Read flame parameters from flat array
     let flame = read_flame();
     
-    // DIAGNOSTIC: Test random starting points to see if they spread across all 3 regions
+    // Random starting point in [-1, 1] x [-1, 1]
     var p = vec2<f32>(
-        (pcg_random(&state) * 2.0 - 1.0) * 1.0,  // Range [-1, 1]
-        (pcg_random(&state) * 2.0 - 1.0) * 1.0,  // Range [-1, 1]
+        pcg_random(&state) * 2.0 - 1.0,
+        pcg_random(&state) * 2.0 - 1.0,
     );
     var color = vec2<f32>(0.5, 0.5);
     
@@ -294,16 +294,33 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var iter = 0u; iter < MAX_ITERATIONS_PER_THREAD; iter++) {
         // Pick random branch
         let branch_idx = u32(pcg_random(&state) * f32(flame.branch_count));
-        
-        // DIAGNOSTIC: clamp branch_idx to valid range to ensure we're not overflowing
         let safe_branch_idx = min(branch_idx, flame.branch_count - 1u);
         let branch = read_branch(safe_branch_idx);
         
-        // Apply pre-affine from GPU buffer
-        p = apply_affine(p, branch.pre_affine);
+        // Apply pre-affine transform
+        let t = apply_affine(p, branch.pre_affine);
         
-        // Skip post-affine for now (disabled until we fix the buffer issue)
-        // p = apply_affine(p, branch.post_affine);
+        // Precompute polar coordinates for variations
+        // TODO: Verify atan2(y, x) matches Legacy behavior—may need adjustment once UI is stable for testing
+        let theta = atan2(t.y, t.x);
+        let rsq = dot(t, t);
+        let r = sqrt(rsq);
+        
+        // Apply variations and accumulate weighted results
+        var result = vec2<f32>(0.0);
+        for (var vi = 0u; vi < branch.var_count; vi++) {
+            let var_idx = branch.var_offset + vi;
+            let var_entry = variations[var_idx];
+            
+            if var_entry.weight > 0.0 {
+                let random_val = pcg_random(&state);
+                let var_result = apply_variation(var_entry.var_id, t, var_entry.weight, random_val);
+                result = result + var_result;
+            }
+        }
+        
+        // Apply post-affine transform to the accumulated variation result
+        p = apply_affine(result, branch.post_affine);
         
         // Update color
         let new_color = branch.chroma + (color - branch.chroma) * (1.0 - branch.color_weight);
@@ -322,10 +339,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let params = unpack_render_params(vec4<u32>(render_params[0u], render_params[1u], render_params[2u], 0u));
         let hist_width = params.hist_width;
         let hist_height = params.hist_height;
-        let hist_x = u32(clamp((screen_pos.x + 1.0) * 0.5 * f32(hist_width), 0.0, f32(hist_width - 1u)));
-        let hist_y = u32(clamp((screen_pos.y + 1.0) * 0.5 * f32(hist_height), 0.0, f32(hist_height - 1u)));
         
-        if hist_x < hist_width && hist_y < hist_height {
+        // Convert to signed pixel coordinates first, then cull using integer bounds.
+        let hist_x_i = i32((screen_pos.x + 1.0) * 0.5 * f32(hist_width));
+        let hist_y_i = i32((screen_pos.y + 1.0) * 0.5 * f32(hist_height));
+
+        if hist_x_i >= 0 && hist_x_i < i32(hist_width) && hist_y_i >= 0 && hist_y_i < i32(hist_height) {
+            let hist_x = u32(hist_x_i);
+            let hist_y = u32(hist_y_i);
             let pixel_idx_base = (hist_y * hist_width + hist_x) * 4u;
             
             // Convert chroma to RGB and accumulate
