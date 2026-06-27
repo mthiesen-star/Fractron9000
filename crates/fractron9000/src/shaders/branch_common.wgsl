@@ -13,6 +13,9 @@ struct FlameData {
     vibrancy: f32,
     background: vec4<f32>,
     branch_count: u32,
+    // TODO: vps_transform is a derived rendering param (flame + resolution), not a pure flame
+    // property. Move it to a dedicated SceneData buffer in a future refactor.
+    vps_transform: Affine,
 }
 
 struct RenderParams {
@@ -51,6 +54,8 @@ fn apply_affine(p: vec2<f32>, t: Affine) -> vec2<f32> {
 /// [12-15]: background (r, g, b, a)
 /// [16]:    branch_count (bitcast as f32)
 /// [17]:    reserved
+/// [18-21]: vps_transform.row0 (a, b, e, padding)  — fractal→pixel mapping
+/// [22-25]: vps_transform.row1 (c, d, f, padding)
 fn read_flame() -> FlameData {
     var flame: FlameData;
     
@@ -83,6 +88,14 @@ fn read_flame() -> FlameData {
     
     // counters [16-17] (bitcast from f32)
     flame.branch_count = bitcast<u32>(flame_data[16u]);
+    
+    // vps_transform [18-25]: fractal → pixel-space mapping (screenTransform × cameraTransform)
+    flame.vps_transform.row0 = vec4<f32>(
+        flame_data[18u], flame_data[19u], flame_data[20u], flame_data[21u]
+    );
+    flame.vps_transform.row1 = vec4<f32>(
+        flame_data[22u], flame_data[23u], flame_data[24u], flame_data[25u]
+    );
     
     return flame;
 }

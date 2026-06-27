@@ -2,7 +2,7 @@
 
 use wgpu::*;
 use wgpu::util::DeviceExt;
-use glam::Mat3;
+use glam::{Mat3, Vec3};
 use fractal_core::flame::Flame;
 
 // Iteration constants (matching chaos game chaos settings)
@@ -111,7 +111,7 @@ impl GpuRenderer {
         });
         
         // Build GPU buffer data from Rust structures
-        let gpu_flame_flat = Self::flame_to_gpu_flat(flame);
+        let gpu_flame_flat = Self::flame_to_gpu_flat(flame, output_width, output_height);
         let (gpu_branches, gpu_variations) = Self::flame_to_gpu_branches(flame);
         
         // DEBUG: Print buffer layout
@@ -123,6 +123,7 @@ impl GpuRenderer {
         eprintln!("  [8-11]:  params (brightness, gamma, vibrancy, padding)");
         eprintln!("  [12-15]: background (r, g, b, a)");
         eprintln!("  [16-17]: branch_count, reserved (as bitcast f32)");
+        eprintln!("  [18-25]: vps_transform (row0, row1) - fractal to pixel mapping");
         eprintln!();
         eprintln!("Branches buffer: {} f32s ({} bytes) - {} branches", 
                  gpu_branches.len(), gpu_branches.len() * 4, gpu_branches.len() / 18);
@@ -488,7 +489,7 @@ impl GpuRenderer {
     /// This updates fields packed into the flat flame buffer, including camera transform
     /// and tone-mapping parameters.
     pub fn update_flame(&self, queue: &Queue, flame: &Flame) {
-        let gpu_flame_flat = Self::flame_to_gpu_flat(flame);
+        let gpu_flame_flat = Self::flame_to_gpu_flat(flame, self.output_width, self.output_height);
         queue.write_buffer(&self.flame_buffer, 0, bytemuck::cast_slice(&gpu_flame_flat));
     }
 
@@ -943,8 +944,27 @@ impl GpuRenderer {
     /// [12-15]: background (r, g, b, a)
     /// [16]:    branch_count (bitcast as f32)
     /// [17]:    reserved (bitcast as f32)
-    fn flame_to_gpu_flat(flame: &Flame) -> Vec<f32> {
+    // TODO: vps_transform is a derived rendering param (flame + resolution), not a pure flame
+    // property. Move it (and invPixArea) to a dedicated SceneData buffer in a future refactor.
+
+    /// Compute the View-Projection-Screen transform: maps fractal space directly to histogram
+    /// pixel coordinates.  This is screenTransform × cameraTransform, where screenTransform
+    /// scales the ±1 screen space to [0, width) × [0, height) without a Y-flip (the flip
+    /// happens at display time in the egui texture presentation).
+    fn compute_vps_transform(camera: Mat3, width: u32, height: u32) -> Mat3 {
+        let hw = width as f32 / 2.0;
+        let hh = height as f32 / 2.0;
+        let screen_transform = Mat3::from_cols(
+            Vec3::new(hw,  0.0, 0.0),
+            Vec3::new(0.0, hh,  0.0),
+            Vec3::new(hw,  hh,  1.0),
+        );
+        screen_transform * camera
+    }
+
+    fn flame_to_gpu_flat(flame: &Flame, width: u32, height: u32) -> Vec<f32> {
         let camera_transform = GpuAffine::from_mat3(flame.camera_transform);
+        let vps = GpuAffine::from_mat3(Self::compute_vps_transform(flame.camera_transform, width, height));
         let branch_count = flame.branches.len() as u32;
         
         vec![
@@ -975,6 +995,10 @@ impl GpuRenderer {
             // counters (2 f32s with bitcast u32s)
             f32::from_bits(branch_count),
             0.0,
+
+            // vps_transform [18-25]: fractal → pixel-space mapping
+            vps.row0[0], vps.row0[1], vps.row0[2], vps.row0[3],
+            vps.row1[0], vps.row1[1], vps.row1[2], vps.row1[3],
         ]
     }
     
@@ -1334,7 +1358,7 @@ mod tests {
         });
 
         // Create a flame_data buffer for the test
-        let flame_data_for_test = GpuRenderer::flame_to_gpu_flat(&flame);
+        let flame_data_for_test = GpuRenderer::flame_to_gpu_flat(&flame, 800, 600);
         let flame_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("test_flame_data"),
             contents: bytemuck::cast_slice(&flame_data_for_test),

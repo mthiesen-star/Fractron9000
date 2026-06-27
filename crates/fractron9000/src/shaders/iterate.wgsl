@@ -286,6 +286,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Read flame parameters from flat array
     let flame = read_flame();
     
+    // Unpack histogram dimensions once — constant for all iterations in this invocation
+    let hist_params = unpack_render_params(vec4<u32>(render_params[0u], render_params[1u], render_params[2u], 0u));
+    let hist_width = hist_params.hist_width;
+    let hist_height = hist_params.hist_height;
+    
     // Random starting point in [-1, 1] x [-1, 1]
     var p = vec2<f32>(
         pcg_random(&state) * 2.0 - 1.0,
@@ -334,18 +339,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             continue;
         }
         
-        // Apply camera transform to convert world space to normalized screen space ([-1, 1])
-        let screen_pos = apply_affine(p, flame.camera_transform);
-        
-        // Map from normalized screen space [-1, 1] to pixel coordinates [0, hist_width) x [0, hist_height)
-        // Note: Y-flip is handled by tonemap shader at display time, not here
-        let params = unpack_render_params(vec4<u32>(render_params[0u], render_params[1u], render_params[2u], 0u));
-        let hist_width = params.hist_width;
-        let hist_height = params.hist_height;
-        
-        // Convert to signed pixel coordinates first, then cull using integer bounds.
-        let hist_x_i = i32((screen_pos.x + 1.0) * 0.5 * f32(hist_width));
-        let hist_y_i = i32((screen_pos.y + 1.0) * 0.5 * f32(hist_height));
+        // Apply vps_transform: single matrix multiply maps fractal space → histogram pixel coords
+        let pixel_pos = apply_affine(p, flame.vps_transform);
+        let hist_x_i = i32(pixel_pos.x);
+        let hist_y_i = i32(pixel_pos.y);
 
         if hist_x_i >= 0 && hist_x_i < i32(hist_width) && hist_y_i >= 0 && hist_y_i < i32(hist_height) {
             let hist_x = u32(hist_x_i);
