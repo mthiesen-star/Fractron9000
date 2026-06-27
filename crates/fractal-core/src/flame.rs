@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// A single variation entry (variation function + weight).
 /// This is part of a branch's weighted sum of variations.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VariEntry {
     pub variation: Variation,
     pub weight: f32,
@@ -26,7 +26,7 @@ impl VariEntry {
 
 /// An IFS branch (xform): a weighted affine transformation with variations and color.
 /// All fields are immutable; use `with_*` methods to create modified copies.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Branch {
     /// Pre-variation affine transform (2D rotation, scale, shear + translation).
     /// Stored as 3x3 affine matrix for GPU compatibility.
@@ -102,7 +102,7 @@ impl Branch {
 
 /// A flame: a complete IFS fractal descriptor compatible with Apophysis.
 /// All fields are immutable; use `with_*` methods to create modified copies.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Flame {
     /// Human-readable name.
     pub name: String,

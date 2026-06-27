@@ -46,13 +46,13 @@ pub struct FractronApp {
     gpu_renderer: Option<GpuRenderer>,
     device: Option<Device>,
     queue: Option<Queue>,
-    iter_count: u32,
     rendered_image: Option<egui::ColorImage>,
     texture_handle: Option<egui::TextureHandle>,
     output_texture_id: Option<egui::TextureId>,
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
     left_panel_width: f32,
+    last_flame: Flame,  // Track complete flame state to detect any parameter changes
 }
 
 impl FractronApp {
@@ -114,17 +114,17 @@ impl FractronApp {
         };
         
         Self {
-            flame,
+            flame: flame.clone(),
             gpu_renderer,
             device,
             queue,
-            iter_count: 0,
             rendered_image: None,
             texture_handle: None,
             output_texture_id: None,
             pan_camera_start: None,
             pan_anchor_fractal: None,
             left_panel_width: 128.0,
+            last_flame: flame.clone(),  // Initialize with current flame state
         }
     }
 }
@@ -338,8 +338,16 @@ impl FractronApp {
                         renderer.update_flame(queue, &self.flame);
                     }
 
-                    Self::advance_renderer_frame(renderer, device, queue);
-                    self.iter_count += 1;
+                    // Detect if any flame parameters have changed to clear histogram
+                    let flame_changed = self.flame != self.last_flame;
+                    let should_clear_histogram = flame_dirty || flame_changed;
+                    
+                    // Update last_flame for next frame comparison
+                    if flame_changed {
+                        self.last_flame = self.flame.clone();
+                    }
+
+                    Self::advance_renderer_frame(renderer, device, queue, should_clear_histogram);
                     status_right = Self::present_output_texture(
                         ui,
                         renderer,
@@ -387,9 +395,10 @@ impl FractronApp {
             .map(|p| format!("{:.4},{:.4}", p.x, p.y))
             .unwrap_or_else(|| "none".to_string());
 
+        let frame_count = self.gpu_renderer.as_ref().map(|r| r.frame_count()).unwrap_or(0);
         println!(
-            "STATE_DUMP iter={} pointer={} pan_camera_start={} pan_anchor_fractal={} camera=[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}] camera_scale=[{:.6},{:.6}] viewport=[{:.1},{:.1},{:.1},{:.1}] viewport_aspect={:.6} target={}x{}",
-            self.iter_count,
+            "STATE_DUMP frame_count={} pointer={} pan_camera_start={} pan_anchor_fractal={} camera=[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}] camera_scale=[{:.6},{:.6}] viewport=[{:.1},{:.1},{:.1},{:.1}] viewport_aspect={:.6} target={}x{}",
+            frame_count,
             pointer,
             pan_camera_start,
             pan_anchor_fractal,
@@ -435,8 +444,9 @@ impl FractronApp {
         (left_panel_rect, splitter_rect, viewport_rect)
     }
 
-    fn advance_renderer_frame(renderer: &GpuRenderer, device: &Device, queue: &Queue) {
-        renderer.iterate(queue, device, 65536);
+    fn advance_renderer_frame(renderer: &mut GpuRenderer, device: &Device, queue: &Queue, should_clear_histogram: bool) {
+        renderer.iterate(queue, device, 65536, should_clear_histogram);
+        renderer.increment_frame_count();
         renderer.tonemap(queue, device);
     }
 
@@ -477,7 +487,8 @@ impl FractronApp {
         status_rect: egui::Rect,
         status_right: &str,
     ) {
-        let status_left = format!("Iterations: {}", self.iter_count);
+        let frame_count = self.gpu_renderer.as_ref().map(|r| r.frame_count()).unwrap_or(0);
+        let status_left = format!("Frame Count: {}", frame_count);
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(status_rect), |ui| {
             let frame = egui::Frame::new()

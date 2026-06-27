@@ -65,6 +65,9 @@ pub struct GpuRenderer {
     output_width: u32,
     output_height: u32,
     
+    // Frame counter for RNG seeding (not iteration count, but frame count)
+    frame_count: u32,
+    
     // Bind groups
     iterate_bind_group: BindGroup,
     tonemap_bind_group: BindGroup,
@@ -127,7 +130,7 @@ impl GpuRenderer {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
 
-        let render_params = [output_width, output_height, DEFAULT_TOTAL_ITERATIONS];
+        let render_params = [output_width, output_height, DEFAULT_TOTAL_ITERATIONS, 0u32];
         let render_params_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
             label: Some("render_params_ssbo"),
             contents: bytemuck::cast_slice(&render_params),
@@ -440,6 +443,7 @@ impl GpuRenderer {
             output_texture_view,
             output_width,
             output_height,
+            frame_count: 0,
             iterate_bind_group,
             tonemap_bind_group,
         })
@@ -454,15 +458,36 @@ impl GpuRenderer {
         queue.write_buffer(&self.flame_buffer, 0, bytemuck::cast_slice(&gpu_flame_flat));
     }
 
-    
-    
-    pub fn iterate(&self, queue: &Queue, device: &Device, num_threads: u32) {
-        // Clear histogram to zeros for this frame (4 u32s per pixel: R, G, B, count)
+    /// Clear the histogram buffer to zeros and reset frame counter (call when camera or flame parameters change).
+    pub fn clear_histogram(&mut self, queue: &Queue) {
         queue.write_buffer(
             &self.histogram_buffer,
             0,
             &vec![0u8; (self.output_width * self.output_height * 16) as usize],
         );
+        self.frame_count = 0;
+    }
+    
+    /// Get the current frame counter (used for RNG seeding).
+    pub fn frame_count(&self) -> u32 {
+        self.frame_count
+    }
+    
+    /// Increment the frame counter and return the new value.
+    pub fn increment_frame_count(&mut self) -> u32 {
+        self.frame_count += 1;
+        self.frame_count
+    }
+    
+    pub fn iterate(&mut self, queue: &Queue, device: &Device, num_threads: u32, should_clear_histogram: bool) {
+        // Clear histogram if camera or flame parameters changed
+        if should_clear_histogram {
+            self.clear_histogram(queue);
+        }
+        
+        // Update render_params with current frame count (4 elements: width, height, total_iters, frame_count)
+        let render_params = [self.output_width, self.output_height, DEFAULT_TOTAL_ITERATIONS, self.frame_count];
+        queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params));
         
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("iterate_encoder"),

@@ -278,7 +278,9 @@ fn apply_variation(var_id: u32, p: vec2<f32>, weight: f32, rand: f32) -> vec2<f3
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let thread_id = gid.x;
-    var state = thread_id + 12345u;
+    let frame_count = render_params[3u];  // Use frame counter for RNG seed variation
+    // Each frame gets a different random sequence by varying the seed with frame_count
+    var state = thread_id + 12345u + frame_count * 654321u;
     
     // Read flame parameters from flat array
     let flame = read_flame();

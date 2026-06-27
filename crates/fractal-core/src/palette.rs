@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// A color palette for mapping branch chroma values to RGB.
 /// Stores colors and supports bilinear sampling in normalized [0, 1] space.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Palette {
     /// Flat list of 256 RGB colors (Vec3 with components in [0, 1]).
     /// For 2D palettes, stored row-major: colors[y * width + x].
