@@ -47,10 +47,12 @@ fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_i
     let log_term = 1.0 + count * scale_constant;
     let log_a = TONE_C1 * brightness * log_b10(log_term);
     
-    // Normalize colors by dividing RGB by count (average color per hit)
-    let r_avg = r / (count + 1e-6);
-    let g_avg = g / (count + 1e-6);
-    let b_avg = b / (count + 1e-6);
+    // Normalize colors: divide by count to get average color per hit, then by 255 to
+    // convert from the u32 fixed-point accumulation range (0-255 per hit) back to [0, 1].
+    // No epsilon needed — the count < 0.5 guard above ensures count >= 1 here.
+    let r_avg = r / (count * 255.0);
+    let g_avg = g / (count * 255.0);
+    let b_avg = b / (count * 255.0);
     
     // Apply the log intensity to each channel
     let log_r = log_a * r_avg;
@@ -99,14 +101,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var g_accum = f32(histogram[pixel_idx_base + 1u]);
     var b_accum = f32(histogram[pixel_idx_base + 2u]);
     var count_accum = f32(histogram[pixel_idx_base + 3u]);
-    
-    // Apply upscaling factor to raw accumulated values (like Legacy does)
-    // This expands the range to work well with the tone mapping formula
-    let up_scale_factor = 4.0;
-    r_accum *= up_scale_factor;
-    g_accum *= up_scale_factor;
-    b_accum *= up_scale_factor;
-    count_accum *= up_scale_factor;
     
     // Extract total iteration count from render_params (elements [3] and [4] are low and high u32s of u64)
     let total_iters_low = f32(render_params[3u]);
