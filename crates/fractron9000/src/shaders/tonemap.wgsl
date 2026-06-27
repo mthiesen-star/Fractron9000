@@ -8,12 +8,8 @@
 @group(0) @binding(3) var output_texture: texture_storage_2d<rgba8unorm, write>;
 @group(0) @binding(4) var<storage, read> render_params: array<u32>;  // [0]=width, [1]=height, [2]=frame_count, [3]=total_iters_low, [4]=total_iters_high, [5]=reserved
 
-const PIXEL_AREA: f32 = 1.0;
-const C1: f32 = 1.0;
-
 const TONE_C1: f32 = 0.5;
 const TONE_C2: f32 = 64.0;
-const SUB_PIXEL_SAMPLES: f32 = 4.0;  // 2x2 sub-pixel sampling
 
 /// Log base 10
 fn log_b10(x: f32) -> f32 {
@@ -29,19 +25,16 @@ fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_i
     let gamma = flame_params.y;
     let vibrancy = flame_params.z;
     
-    // Legacy tone mapping formula (from kernels.cl):
-    // scale_constant = TONE_C2 * invPixArea * SUB_PIXEL_SAMPLES / totalIterationCount
-    // Compute invPixArea as the absolute value of the camera transform determinant
+    // Scale constant = TONE_C2 * invPixArea / totalIterationCount
+    // invPixArea = |det(vpsTransform)| = pixels per fractal unit area.
+    // vpsTransform is precomputed CPU-side as screenTransform x cameraTransform, so its
+    // determinant already includes the (width/2)*(height/2) pixel-density factor.
+    // No SUB_PIXEL_SAMPLES factor: without sub-pixels the per-pixel count equals what
+    // Legacy accumulates across all 4 sub-pixels, which exactly cancels the factor.
     let flame = read_flame();
-    let cam_a = flame.camera_transform.row0.x;
-    let cam_b = flame.camera_transform.row0.y;
-    let cam_c = flame.camera_transform.row1.x;
-    let cam_d = flame.camera_transform.row1.y;
-    let det = cam_a * cam_d - cam_b * cam_c;
-    let inv_pixel_area = abs(det);
-    
-    // Formula: scale_constant = TONE_C2 * invPixArea * SUB_PIXEL_SAMPLES / totalIterationCount
-    let scale_constant = TONE_C2 * inv_pixel_area * SUB_PIXEL_SAMPLES / (total_iteration_count + 1e-6);
+    let inv_pixel_area = abs(flame.vps_transform.row0.x * flame.vps_transform.row1.y
+                           - flame.vps_transform.row0.y * flame.vps_transform.row1.x);
+    let scale_constant = TONE_C2 * inv_pixel_area / (total_iteration_count + 1e-6);
     
     // Compute log-intensity for this pixel: log_a = TONE_C1 * brightness * log10(1 + count * scale_constant)
     let log_term = 1.0 + count * scale_constant;
