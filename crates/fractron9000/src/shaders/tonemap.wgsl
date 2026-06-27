@@ -6,19 +6,21 @@
 @group(0) @binding(1) var<storage, read> histogram: array<u32>;
 @group(0) @binding(2) var<storage, read> branch_data: array<f32>;  // Needed by branch_common, not used by tonemap
 @group(0) @binding(3) var output_texture: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(4) var<storage, read> render_params: array<u32>;
+@group(0) @binding(4) var<storage, read> render_params: array<u32>;  // [0]=width, [1]=height, [2]=frame_count, [3]=total_iters_low, [4]=total_iters_high, [5]=reserved
 
 const PIXEL_AREA: f32 = 1.0;
 const C1: f32 = 1.0;
 
 const TONE_C1: f32 = 0.5;
+const TONE_C2: f32 = 64.0;
+const SUB_PIXEL_SAMPLES: f32 = 4.0;  // 2x2 sub-pixel sampling
 
 /// Log base 10
 fn log_b10(x: f32) -> f32 {
     return log(x) / 2.30258509;
 }
 
-fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_iterations: u32) -> vec3<f32> {
+fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_iteration_count: f32) -> vec3<f32> {
     if count < 0.5 {
         return vec3<f32>(0.0);
     }
@@ -27,11 +29,23 @@ fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_i
     let gamma = flame_params.y;
     let vibrancy = flame_params.z;
     
-    // Legacy tone mapping: apply log scale to hit count to get pixel intensity
-    let scale_constant = 1.0 / (f32(total_iterations) + 1e-6);
+    // Legacy tone mapping formula (from kernels.cl):
+    // scale_constant = TONE_C2 * invPixArea * SUB_PIXEL_SAMPLES / totalIterationCount
+    // Compute invPixArea as the absolute value of the camera transform determinant
+    let flame = read_flame();
+    let cam_a = flame.camera_transform.row0.x;
+    let cam_b = flame.camera_transform.row0.y;
+    let cam_c = flame.camera_transform.row1.x;
+    let cam_d = flame.camera_transform.row1.y;
+    let det = cam_a * cam_d - cam_b * cam_c;
+    let inv_pixel_area = abs(det);
     
-    // Compute the log-intensity for this pixel based on hit count
-    let log_a = TONE_C1 * brightness * log_b10(1.0 + count * scale_constant);
+    // Formula: scale_constant = TONE_C2 * invPixArea * SUB_PIXEL_SAMPLES / totalIterationCount
+    let scale_constant = TONE_C2 * inv_pixel_area * SUB_PIXEL_SAMPLES / (total_iteration_count + 1e-6);
+    
+    // Compute log-intensity for this pixel: log_a = TONE_C1 * brightness * log10(1 + count * scale_constant)
+    let log_term = 1.0 + count * scale_constant;
+    let log_a = TONE_C1 * brightness * log_b10(log_term);
     
     // Normalize colors by dividing RGB by count (average color per hit)
     let r_avg = r / (count + 1e-6);
@@ -43,7 +57,7 @@ fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_i
     let log_g = log_a * g_avg;
     let log_b_val = log_a * b_avg;
     
-    // Apply gamma correction
+    // Apply gamma correction: z = pow(log_a, 1/gamma), gamma_factor = z / log_a
     let inv_gamma = 1.0 / gamma;
     let z = pow(log_a, inv_gamma);
     let gamma_factor = z / (log_a + 1e-6);
@@ -57,7 +71,7 @@ fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_i
 }
 
 // Debug version of tone map. Each pixel is either ON if count >= 0.5 or off otherwise
-fn tone_map_binary_debug(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_iterations: u32) -> vec3<f32> {
+fn tone_map_binary_debug(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_dot_count: f32) -> vec3<f32> {
     if count < 0.5 {
         return vec3<f32>(0.0);
     }
@@ -94,9 +108,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     b_accum *= up_scale_factor;
     count_accum *= up_scale_factor;
     
+    // Extract total iteration count from render_params (elements [3] and [4] are low and high u32s of u64)
+    let total_iters_low = f32(render_params[3u]);
+    let total_iters_high = f32(render_params[4u]);
+    let total_iteration_count_f32 = total_iters_low + total_iters_high * 4294967296.0;  // 2^32
+    
     // Apply tone mapping
     let flame_params = vec3<f32>(flame.brightness, flame.gamma, flame.vibrancy);
-    let mapped = tone_map(r_accum, g_accum, b_accum, count_accum, flame_params, params.total_iterations);
+    let mapped = tone_map(r_accum, g_accum, b_accum, count_accum, flame_params, total_iteration_count_f32);
     
     // Blend with background
     let bg = flame.background.xyz;

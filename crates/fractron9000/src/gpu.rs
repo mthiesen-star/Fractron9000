@@ -5,7 +5,11 @@ use wgpu::util::DeviceExt;
 use glam::Mat3;
 use fractal_core::flame::Flame;
 
-const DEFAULT_TOTAL_ITERATIONS: u32 = 100000000;
+// Iteration constants (matching chaos game chaos settings)
+const THREADS_PER_FRAME: u32 = 65536;
+const ITERATIONS_PER_THREAD: u32 = 1000;
+const TRANSIENT_SKIP: u32 = 20;  // First 20 iterations discarded per thread
+const EFFECTIVE_ITERATIONS_PER_THREAD: u32 = ITERATIONS_PER_THREAD - TRANSIENT_SKIP;
 
 // ============================================================================
 // GPU BUFFER STRUCTURES (internal helpers only - no repr(C) needed)
@@ -53,6 +57,8 @@ pub struct GpuRenderer {
     branches_buffer: Buffer,
     variations_buffer: Buffer,
     histogram_buffer: Buffer,
+    histogram_staging_buffer: Buffer,  // For reading back histogram hit counts
+    dot_count_buffer: Buffer,  // Per-frame dot counter (u32)
     
     // Palette texture for chroma->RGB mapping (2D Legacy palette)
     palette_texture: Texture,
@@ -65,7 +71,7 @@ pub struct GpuRenderer {
     output_width: u32,
     output_height: u32,
     
-    // Frame counter for RNG seeding (not iteration count, but frame count)
+    // Frame counter for RNG seeding
     frame_count: u32,
     
     // Bind groups
@@ -130,7 +136,7 @@ impl GpuRenderer {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
 
-        let render_params = [output_width, output_height, DEFAULT_TOTAL_ITERATIONS, 0u32];
+        let render_params = [output_width, output_height, 0u32, 0u32, 0u32, 0u32];  // Initialized with zeros; updated each frame
         let render_params_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
             label: Some("render_params_ssbo"),
             contents: bytemuck::cast_slice(&render_params),
@@ -153,7 +159,7 @@ impl GpuRenderer {
             label: Some("histogram_ssbo"),
             // 4 u32s per pixel: R, G, B, count (total 16 bytes per pixel)
             size: (output_width * output_height * 16) as u64,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             mapped_at_creation: true,
         });
         
@@ -164,6 +170,21 @@ impl GpuRenderer {
             mapping.copy_from_slice(&zeros);
         }
         histogram_buffer.unmap();
+        
+        // Create dot-count buffer (single u32 counter, used per-frame and read back to accumulate)
+        let dot_count_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+            label: Some("dot_count_ssbo"),
+            contents: bytemuck::cast_slice(&[0u32, 0u32, 0u32, 0u32]), // 4 u32s to match typical alignment; we only use [0]
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        });
+        
+        // Create staging buffer for reading back histogram hit counts
+        let histogram_staging_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("histogram_staging"),
+            size: (output_width * output_height * 16) as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
         
         // Create output texture
         let output_texture = device.create_texture(&TextureDescriptor {
@@ -316,6 +337,16 @@ impl GpuRenderer {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
         
@@ -330,6 +361,7 @@ impl GpuRenderer {
                 BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&palette_texture_view) },
                 BindGroupEntry { binding: 5, resource: BindingResource::Sampler(&palette_sampler) },
                 BindGroupEntry { binding: 6, resource: render_params_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 7, resource: dot_count_buffer.as_entire_binding() },
             ],
         });
         
@@ -436,6 +468,8 @@ impl GpuRenderer {
             branches_buffer,
             variations_buffer,
             histogram_buffer,
+            histogram_staging_buffer,
+            dot_count_buffer,
             palette_texture,
             palette_texture_view,
             palette_sampler,
@@ -479,15 +513,28 @@ impl GpuRenderer {
         self.frame_count
     }
     
+    /// Calculate total iteration count from frame count.
+    /// Formula: frame_count × threads_per_frame × iterations_per_thread
+    fn calculate_total_iterations(&self) -> u64 {
+        (self.frame_count as u64) * (THREADS_PER_FRAME as u64) * (ITERATIONS_PER_THREAD as u64)
+    }
+    
     pub fn iterate(&mut self, queue: &Queue, device: &Device, num_threads: u32, should_clear_histogram: bool) {
         // Clear histogram if camera or flame parameters changed
         if should_clear_histogram {
             self.clear_histogram(queue);
         }
         
-        // Update render_params with current frame count (4 elements: width, height, total_iters, frame_count)
-        let render_params = [self.output_width, self.output_height, DEFAULT_TOTAL_ITERATIONS, self.frame_count];
+        // Update render_params with current frame count and total iteration count
+        // Format: [width, height, frame_count, total_iters_low, total_iters_high, reserved]
+        let total_iters = self.calculate_total_iterations();
+        let total_iters_low = (total_iters & 0xFFFFFFFF) as u32;
+        let total_iters_high = ((total_iters >> 32) & 0xFFFFFFFF) as u32;
+        let render_params = [self.output_width, self.output_height, self.frame_count, total_iters_low, total_iters_high, 0u32];
         queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params));
+        
+        // Reset dot_count_buffer to zero before iterate
+        queue.write_buffer(&self.dot_count_buffer, 0, bytemuck::cast_slice(&[0u32, 0u32, 0u32, 0u32]));
         
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("iterate_encoder"),
@@ -503,8 +550,20 @@ impl GpuRenderer {
             cpass.dispatch_workgroups((num_threads + 255) / 256, 1, 1);
         }
         
+        // Copy histogram to staging buffer for readback
+        {
+            let copy_size = (self.output_width * self.output_height * 16) as u64;
+            encoder.copy_buffer_to_buffer(&self.histogram_buffer, 0, &self.histogram_staging_buffer, 0, copy_size);
+        }
+        
         queue.submit(std::iter::once(encoder.finish()));
+        
+        // Wait for GPU work to complete
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        
+        // No histogram readback needed—iteration count is computed directly from frame count
     }
+    
     
     pub fn tonemap(&self, queue: &Queue, device: &Device) {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
@@ -523,7 +582,7 @@ impl GpuRenderer {
         
         queue.submit(std::iter::once(encoder.finish()));
     }
-    
+
 
     
     #[allow(dead_code)]
@@ -654,7 +713,7 @@ impl GpuRenderer {
         let histogram_buffer = device.create_buffer(&BufferDescriptor {
             label: Some("histogram_ssbo"),
             size: (new_width * new_height * 16) as u64,
-            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             mapped_at_creation: true,
         });
 
@@ -664,6 +723,13 @@ impl GpuRenderer {
             mapping.copy_from_slice(&zeros);
         }
         histogram_buffer.unmap();
+
+        let histogram_staging_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("histogram_staging"),
+            size: (new_width * new_height * 16) as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
 
         let output_texture = device.create_texture(&TextureDescriptor {
             label: Some("output_texture"),
@@ -750,6 +816,16 @@ impl GpuRenderer {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -764,6 +840,7 @@ impl GpuRenderer {
                 BindGroupEntry { binding: 4, resource: BindingResource::TextureView(&self.palette_texture_view) },
                 BindGroupEntry { binding: 5, resource: BindingResource::Sampler(&self.palette_sampler) },
                 BindGroupEntry { binding: 6, resource: self.render_params_buffer.as_entire_binding() },
+                BindGroupEntry { binding: 7, resource: self.dot_count_buffer.as_entire_binding() },
             ],
         });
 
@@ -835,10 +912,11 @@ impl GpuRenderer {
             ],
         });
 
-        let resized_render_params = [new_width, new_height, DEFAULT_TOTAL_ITERATIONS];
+        let resized_render_params = [new_width, new_height, self.frame_count, 0u32, 0u32, 0u32];
         queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&resized_render_params));
 
         self.histogram_buffer = histogram_buffer;
+        self.histogram_staging_buffer = histogram_staging_buffer;
         self.output_texture = output_texture;
         self.output_texture_view = output_texture_view;
         self.output_width = new_width;

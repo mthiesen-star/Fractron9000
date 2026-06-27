@@ -1,5 +1,6 @@
 mod gpu;
 mod camera_math;
+mod tone_map_test;
 // Force rebuild marker 7
 
 use gpu::GpuRenderer;

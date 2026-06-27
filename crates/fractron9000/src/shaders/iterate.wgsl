@@ -22,6 +22,7 @@ struct VariEntry {
 @group(0) @binding(4) var palette_texture: texture_2d<f32>;
 @group(0) @binding(5) var palette_sampler: sampler;
 @group(0) @binding(6) var<storage, read> render_params: array<u32>;
+@group(0) @binding(7) var<storage, read_write> dot_count: array<atomic<u32>>;  // Per-frame dot counter at index [0]
 
 const MAX_ITERATIONS_PER_THREAD: u32 = 1000u;
 
@@ -362,6 +363,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             atomicAdd(&histogram[pixel_idx_base + 1u], g_packed);
             atomicAdd(&histogram[pixel_idx_base + 2u], b_packed);
             atomicAdd(&histogram[pixel_idx_base + 3u], 1u);
+            
+            // Increment the per-frame dot counter
+            atomicAdd(&dot_count[0u], 1u);
         }
     }
 }
