@@ -44,14 +44,22 @@ const TRIAD_HOVER_RADIUS: f32 = 8.0;
 const TRIAD_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 220, 220);
 const TRIAD_HOVER_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TriadHandle {
+    Origin,
+    XAxis,
+    YAxis,
+}
+
 pub struct FractronApp {
     flame: Flame,
     gpu_renderer: Option<GpuRenderer>,
     output_texture_id: Option<egui::TextureId>,
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
-    origin_drag_branch: Option<usize>,
-    origin_drag_pre_affine_start: Option<Mat3>,
+    triad_drag_branch: Option<usize>,
+    triad_drag_handle: Option<TriadHandle>,
+    triad_drag_pre_affine_start: Option<Mat3>,
     left_panel_width: f32,
     last_flame: Flame,  // Track complete flame state to detect any parameter changes
 }
@@ -116,8 +124,9 @@ impl FractronApp {
             output_texture_id: None,
             pan_camera_start: None,
             pan_anchor_fractal: None,
-            origin_drag_branch: None,
-            origin_drag_pre_affine_start: None,
+            triad_drag_branch: None,
+            triad_drag_handle: None,
+            triad_drag_pre_affine_start: None,
             left_panel_width: 128.0,
             last_flame: flame.clone(),  // Initialize with current flame state
         }
@@ -280,7 +289,7 @@ impl FractronApp {
                 }
 
                 let (histogram_width, histogram_height) = renderer.histogram_size();
-                let origin_hovered_branch = Self::pick_hovered_origin_branch(
+                let hovered_triad_handle = Self::pick_hovered_triad_handle(
                     viewport_rect,
                     &self.flame,
                     histogram_width,
@@ -290,16 +299,18 @@ impl FractronApp {
 
                 ui.input(|i| {
                     if i.pointer.button_released(egui::PointerButton::Primary) {
-                        self.origin_drag_branch = None;
-                        self.origin_drag_pre_affine_start = None;
+                        self.triad_drag_branch = None;
+                        self.triad_drag_handle = None;
+                        self.triad_drag_pre_affine_start = None;
                     }
 
                     if i.pointer.button_pressed(egui::PointerButton::Primary)
-                        && let Some(branch_index) = origin_hovered_branch
+                        && let Some((branch_index, handle)) = hovered_triad_handle
                         && let Some(branch) = self.flame.branches.get(branch_index)
                     {
-                        self.origin_drag_branch = Some(branch_index);
-                        self.origin_drag_pre_affine_start = Some(branch.pre_affine);
+                        self.triad_drag_branch = Some(branch_index);
+                        self.triad_drag_handle = Some(handle);
+                        self.triad_drag_pre_affine_start = Some(branch.pre_affine);
                     }
 
                     if i.pointer.button_pressed(egui::PointerButton::Middle)
@@ -360,9 +371,10 @@ impl FractronApp {
                         flame_dirty = true;
                     }
 
-                    if let (Some(branch_index), Some(pre_affine_start), Some(pos)) = (
-                        self.origin_drag_branch,
-                        self.origin_drag_pre_affine_start,
+                    if let (Some(branch_index), Some(handle), Some(pre_affine_start), Some(pos)) = (
+                        self.triad_drag_branch,
+                        self.triad_drag_handle,
+                        self.triad_drag_pre_affine_start,
                         i.pointer.interact_pos(),
                     )
                         && let Some(pointer_fractal) = ui_to_fractal_space(
@@ -374,10 +386,17 @@ impl FractronApp {
                         )
                         && let Some(branch) = self.flame.branches.get_mut(branch_index)
                     {
-                        let next_pre_affine = solve_pre_affine_origin_translation(
-                            pre_affine_start,
-                            pointer_fractal,
-                        );
+                        let next_pre_affine = match handle {
+                            TriadHandle::Origin => {
+                                solve_pre_affine_origin_translation(pre_affine_start, pointer_fractal)
+                            }
+                            TriadHandle::XAxis => {
+                                solve_pre_affine_x_axis_endpoint(pre_affine_start, pointer_fractal)
+                            }
+                            TriadHandle::YAxis => {
+                                solve_pre_affine_y_axis_endpoint(pre_affine_start, pointer_fractal)
+                            }
+                        };
                         if branch.pre_affine != next_pre_affine {
                             branch.pre_affine = next_pre_affine;
                             flame_dirty = true;
@@ -413,8 +432,9 @@ impl FractronApp {
                     &self.flame,
                     histogram_width,
                     histogram_height,
-                    origin_hovered_branch,
-                    self.origin_drag_branch,
+                    hovered_triad_handle,
+                    self.triad_drag_branch,
+                    self.triad_drag_handle,
                 );
             } else {
                 ui.label("GPU renderer not initialized. Check console for errors.");
@@ -530,33 +550,66 @@ impl FractronApp {
         }
     }
 
-    fn pick_hovered_origin_branch(
+    fn pick_hovered_triad_handle(
         viewport_rect: egui::Rect,
         flame: &Flame,
         histogram_width: u32,
         histogram_height: u32,
         hover_pos: Option<egui::Pos2>,
-    ) -> Option<usize> {
+    ) -> Option<(usize, TriadHandle)> {
         let hover_pos = hover_pos?;
+        let mut best: Option<(usize, TriadHandle, f32)> = None;
 
         for (branch_index, branch) in flame.branches.iter().enumerate() {
-            let origin = branch.pre_affine.transform_point2(Vec2::ZERO);
-            let Some(origin_ui) = fractal_to_ui_space(
-                viewport_rect,
-                origin,
-                flame.camera_transform,
-                histogram_width,
-                histogram_height,
+            let pre = branch.pre_affine;
+            let origin = pre.transform_point2(Vec2::ZERO);
+            let x_point = pre.transform_point2(Vec2::X);
+            let y_point = pre.transform_point2(Vec2::Y);
+
+            let (Some(origin_ui), Some(x_ui), Some(y_ui)) = (
+                fractal_to_ui_space(
+                    viewport_rect,
+                    origin,
+                    flame.camera_transform,
+                    histogram_width,
+                    histogram_height,
+                ),
+                fractal_to_ui_space(
+                    viewport_rect,
+                    x_point,
+                    flame.camera_transform,
+                    histogram_width,
+                    histogram_height,
+                ),
+                fractal_to_ui_space(
+                    viewport_rect,
+                    y_point,
+                    flame.camera_transform,
+                    histogram_width,
+                    histogram_height,
+                ),
             ) else {
                 continue;
             };
 
-            if hover_pos.distance(origin_ui) <= TRIAD_HOVER_RADIUS {
-                return Some(branch_index);
+            let candidates = [
+                (TriadHandle::Origin, origin_ui),
+                (TriadHandle::XAxis, x_ui),
+                (TriadHandle::YAxis, y_ui),
+            ];
+
+            for (handle, ui_pos) in candidates {
+                let distance = hover_pos.distance(ui_pos);
+                if distance <= TRIAD_HOVER_RADIUS {
+                    match best {
+                        Some((_, _, best_distance)) if distance >= best_distance => {}
+                        _ => best = Some((branch_index, handle, distance)),
+                    }
+                }
             }
         }
 
-        None
+        best.map(|(branch_index, handle, _)| (branch_index, handle))
     }
 
     fn render_affine_triads(
@@ -565,11 +618,11 @@ impl FractronApp {
         flame: &Flame,
         histogram_width: u32,
         histogram_height: u32,
-        origin_hovered_branch: Option<usize>,
-        origin_drag_branch: Option<usize>,
+        hovered_triad_handle: Option<(usize, TriadHandle)>,
+        drag_branch: Option<usize>,
+        drag_handle: Option<TriadHandle>,
     ) {
         let painter = ui.painter_at(viewport_rect);
-        let hover_pos = ui.input(|i| i.pointer.hover_pos());
         let pointer_down = ui.input(|i| i.pointer.primary_down());
 
         for (branch_index, branch) in flame.branches.iter().enumerate() {
@@ -604,22 +657,31 @@ impl FractronApp {
                 continue;
             };
 
-            let is_origin_hovered = origin_hovered_branch == Some(branch_index);
-            let is_origin_dragged = origin_drag_branch == Some(branch_index) && pointer_down;
-            let is_x_hovered = hover_pos.is_some_and(|pos| pos.distance(x_ui) <= TRIAD_HOVER_RADIUS);
-            let is_y_hovered = hover_pos.is_some_and(|pos| pos.distance(y_ui) <= TRIAD_HOVER_RADIUS);
+            let is_origin_hovered = hovered_triad_handle == Some((branch_index, TriadHandle::Origin));
+            let is_x_hovered = hovered_triad_handle == Some((branch_index, TriadHandle::XAxis));
+            let is_y_hovered = hovered_triad_handle == Some((branch_index, TriadHandle::YAxis));
+
+            let is_origin_dragged = drag_branch == Some(branch_index)
+                && drag_handle == Some(TriadHandle::Origin)
+                && pointer_down;
+            let is_x_dragged = drag_branch == Some(branch_index)
+                && drag_handle == Some(TriadHandle::XAxis)
+                && pointer_down;
+            let is_y_dragged = drag_branch == Some(branch_index)
+                && drag_handle == Some(TriadHandle::YAxis)
+                && pointer_down;
 
             let origin_color = if is_origin_hovered || is_origin_dragged { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
-            let x_color = if is_x_hovered { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
-            let y_color = if is_y_hovered { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
+            let x_color = if is_x_hovered || is_x_dragged { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
+            let y_color = if is_y_hovered || is_y_dragged { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
 
             let origin_radius = if is_origin_hovered || is_origin_dragged {
                 TRIAD_POINT_RADIUS * 1.4
             } else {
                 TRIAD_POINT_RADIUS
             };
-            let x_radius = if is_x_hovered { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
-            let y_radius = if is_y_hovered { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
+            let x_radius = if is_x_hovered || is_x_dragged { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
+            let y_radius = if is_y_hovered || is_y_dragged { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
             let hover_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 30, 30));
 
             painter.line_segment([o_ui, x_ui], egui::Stroke::new(TRIAD_LINE_STROKE, TRIAD_COLOR));
@@ -632,17 +694,17 @@ impl FractronApp {
             if is_origin_hovered || is_origin_dragged {
                 painter.circle_stroke(o_ui, origin_radius, hover_stroke);
             }
-            if is_x_hovered {
+            if is_x_hovered || is_x_dragged {
                 painter.circle_stroke(x_ui, x_radius, hover_stroke);
             }
-            if is_y_hovered {
+            if is_y_hovered || is_y_dragged {
                 painter.circle_stroke(y_ui, y_radius, hover_stroke);
             }
         }
 
-        if origin_drag_branch.is_some() && pointer_down {
+        if drag_branch.is_some() && pointer_down {
             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grabbing);
-        } else if origin_hovered_branch.is_some() {
+        } else if hovered_triad_handle.is_some() {
             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grab);
         }
     }

@@ -94,6 +94,24 @@ pub fn solve_pre_affine_origin_translation(pre_affine_start: Mat3, target_origin
     next_pre_affine
 }
 
+pub fn solve_pre_affine_x_axis_endpoint(pre_affine_start: Mat3, target_x_endpoint: Vec2) -> Mat3 {
+    let mut next_pre_affine = pre_affine_start;
+    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
+    let next_x_axis = target_x_endpoint - origin;
+    next_pre_affine.x_axis.x = next_x_axis.x;
+    next_pre_affine.x_axis.y = next_x_axis.y;
+    next_pre_affine
+}
+
+pub fn solve_pre_affine_y_axis_endpoint(pre_affine_start: Mat3, target_y_endpoint: Vec2) -> Mat3 {
+    let mut next_pre_affine = pre_affine_start;
+    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
+    let next_y_axis = target_y_endpoint - origin;
+    next_pre_affine.y_axis.x = next_y_axis.x;
+    next_pre_affine.y_axis.y = next_y_axis.y;
+    next_pre_affine
+}
+
 pub fn solve_pan_camera_transform(
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
