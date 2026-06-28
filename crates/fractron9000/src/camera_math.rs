@@ -87,6 +87,13 @@ pub fn fractal_to_ui_space(
     ))
 }
 
+pub fn solve_pre_affine_origin_translation(pre_affine_start: Mat3, target_origin: Vec2) -> Mat3 {
+    let mut next_pre_affine = pre_affine_start;
+    next_pre_affine.z_axis.x = target_origin.x;
+    next_pre_affine.z_axis.y = target_origin.y;
+    next_pre_affine
+}
+
 pub fn solve_pan_camera_transform(
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,

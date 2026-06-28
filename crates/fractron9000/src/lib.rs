@@ -51,7 +51,7 @@ pub struct FractronApp {
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
     origin_drag_branch: Option<usize>,
-    origin_drag_offset: Option<Vec2>,
+    origin_drag_pre_affine_start: Option<Mat3>,
     left_panel_width: f32,
     last_flame: Flame,  // Track complete flame state to detect any parameter changes
 }
@@ -117,7 +117,7 @@ impl FractronApp {
             pan_camera_start: None,
             pan_anchor_fractal: None,
             origin_drag_branch: None,
-            origin_drag_offset: None,
+            origin_drag_pre_affine_start: None,
             left_panel_width: 128.0,
             last_flame: flame.clone(),  // Initialize with current flame state
         }
@@ -291,22 +291,15 @@ impl FractronApp {
                 ui.input(|i| {
                     if i.pointer.button_released(egui::PointerButton::Primary) {
                         self.origin_drag_branch = None;
-                        self.origin_drag_offset = None;
+                        self.origin_drag_pre_affine_start = None;
                     }
 
                     if i.pointer.button_pressed(egui::PointerButton::Primary)
-                        && let Some(pos) = i.pointer.interact_pos()
-                        && let Some((branch_index, origin_fractal)) = origin_hovered_branch
-                        && let Some(pointer_fractal) = ui_to_fractal_space(
-                            viewport_rect,
-                            pos,
-                            self.flame.camera_transform,
-                            histogram_width,
-                            histogram_height,
-                        )
+                        && let Some(branch_index) = origin_hovered_branch
+                        && let Some(branch) = self.flame.branches.get(branch_index)
                     {
                         self.origin_drag_branch = Some(branch_index);
-                        self.origin_drag_offset = Some(origin_fractal - pointer_fractal);
+                        self.origin_drag_pre_affine_start = Some(branch.pre_affine);
                     }
 
                     if i.pointer.button_pressed(egui::PointerButton::Middle)
@@ -367,9 +360,9 @@ impl FractronApp {
                         flame_dirty = true;
                     }
 
-                    if let (Some(branch_index), Some(origin_offset), Some(pos)) = (
+                    if let (Some(branch_index), Some(pre_affine_start), Some(pos)) = (
                         self.origin_drag_branch,
-                        self.origin_drag_offset,
+                        self.origin_drag_pre_affine_start,
                         i.pointer.interact_pos(),
                     )
                         && let Some(pointer_fractal) = ui_to_fractal_space(
@@ -381,12 +374,12 @@ impl FractronApp {
                         )
                         && let Some(branch) = self.flame.branches.get_mut(branch_index)
                     {
-                        let next_origin = pointer_fractal + origin_offset;
-                        if branch.pre_affine.z_axis.x != next_origin.x
-                            || branch.pre_affine.z_axis.y != next_origin.y
-                        {
-                            branch.pre_affine.z_axis.x = next_origin.x;
-                            branch.pre_affine.z_axis.y = next_origin.y;
+                        let next_pre_affine = solve_pre_affine_origin_translation(
+                            pre_affine_start,
+                            pointer_fractal,
+                        );
+                        if branch.pre_affine != next_pre_affine {
+                            branch.pre_affine = next_pre_affine;
                             flame_dirty = true;
                         }
                     }
@@ -420,7 +413,7 @@ impl FractronApp {
                     &self.flame,
                     histogram_width,
                     histogram_height,
-                    origin_hovered_branch.map(|(branch_index, _)| branch_index),
+                    origin_hovered_branch,
                     self.origin_drag_branch,
                 );
             } else {
@@ -543,7 +536,7 @@ impl FractronApp {
         histogram_width: u32,
         histogram_height: u32,
         hover_pos: Option<egui::Pos2>,
-    ) -> Option<(usize, Vec2)> {
+    ) -> Option<usize> {
         let hover_pos = hover_pos?;
 
         for (branch_index, branch) in flame.branches.iter().enumerate() {
@@ -559,7 +552,7 @@ impl FractronApp {
             };
 
             if hover_pos.distance(origin_ui) <= TRIAD_HOVER_RADIUS {
-                return Some((branch_index, origin));
+                return Some(branch_index);
             }
         }
 
