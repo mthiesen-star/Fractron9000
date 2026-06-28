@@ -475,7 +475,7 @@ impl FractronApp {
         viewport_rect: egui::Rect,
         flame: &Flame,
     ) {
-        let painter = ui.painter();
+        let painter = ui.painter_at(viewport_rect);
         let pixels_per_point = ui.ctx().pixels_per_point();
         let histogram_width = (viewport_rect.width() * pixels_per_point).round().max(1.0) as u32;
         let histogram_height = (viewport_rect.height() * pixels_per_point).round().max(1.0) as u32;
