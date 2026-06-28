@@ -519,7 +519,7 @@ impl GpuRenderer {
         if should_clear_histogram {
             self.clear_histogram();
         }
-        self.iterate(65536);
+        self.iterate(THREADS_PER_FRAME);
         self.tonemap();
         self.frame_count += 1;
     }
@@ -600,98 +600,7 @@ impl GpuRenderer {
     pub fn device(&self) -> &Device {
         &self.device
     }
-    
-    /// Read the output texture back to CPU as RGBA8 data (synchronous with device.poll)
-    #[allow(dead_code)]
-    pub fn read_output_to_vec(&self) -> Vec<u8> {
-        let extent = self.output_texture.size();
-        let width = extent.width as usize;
-        let height = extent.height as usize;
-        let bytes_per_pixel = 4;
-        
-        // Rows must be 256-byte aligned for GPU copies
-        let bytes_per_row = (width * bytes_per_pixel).next_multiple_of(256);
-        let total_bytes = bytes_per_row * height;
-        
-        // Create staging buffer
-        let staging_buffer = self.device.create_buffer(&BufferDescriptor {
-            label: Some("output_readback_staging"),
-            size: total_bytes as u64,
-            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        });
-        
-        // Copy texture to staging buffer
-        let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("readback_encoder"),
-        });
-        
-        encoder.copy_texture_to_buffer(
-            TexelCopyTextureInfo {
-                texture: &self.output_texture,
-                mip_level: 0,
-                origin: Origin3d::ZERO,
-                aspect: TextureAspect::All,
-            },
-            TexelCopyBufferInfo {
-                buffer: &staging_buffer,
-                layout: TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(bytes_per_row as u32),
-                    rows_per_image: None,
-                },
-            },
-            extent,
-        );
-        
-        // Submit the copy command
-        self.queue.submit(std::iter::once(encoder.finish()));
-        
-        // Force GPU to complete all submitted work
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-        
-        // Now request map - it should succeed immediately since work is done
-        let mut mapped_successfully = false;
-        for _ in 0..5 {
-            staging_buffer.slice(..).map_async(MapMode::Read, |_| {});
-            
-            // Poll again to process the map request
-            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-            
-            // Try to get the mapped range
-            if let Ok(_) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _range = staging_buffer.slice(..).get_mapped_range();
-                // If we got here without panicking, mapping succeeded
-                drop(_range);
-            })) {
-                mapped_successfully = true;
-                break;
-            }
-            
-            // Unmap and try again
-            staging_buffer.unmap();
-        }
-        
-        if !mapped_successfully {
-            eprintln!("Failed to map staging buffer after GPU work");
-            return vec![0u8; width * height * bytes_per_pixel];
-        }
-        
-        // Read mapped data, skipping row padding
-        let mapped_range = staging_buffer.slice(..).get_mapped_range();
-        let mut result = Vec::with_capacity(width * height * bytes_per_pixel);
-        for y in 0..height {
-            let row_start = y * bytes_per_row;
-            let row_data = &mapped_range[row_start..row_start + width * bytes_per_pixel];
-            result.extend_from_slice(row_data);
-        }
-        
-        drop(mapped_range);
-        staging_buffer.unmap();
-        
-        result
-    }
-    
+
     pub fn needs_resize(&self, target_width: u32, target_height: u32) -> bool {
         let target_width = target_width.clamp(32, 8192);
         let target_height = target_height.clamp(32, 8192);

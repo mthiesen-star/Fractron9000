@@ -39,12 +39,9 @@ fn load_flame_from_file(file_path: &str, flame_name: &str) -> Result<Flame, Stri
 
 const ZOOM_SCROLL_SENSITIVITY: f32 = 0.0050;
 
-#[allow(dead_code)]
 pub struct FractronApp {
     flame: Flame,
     gpu_renderer: Option<GpuRenderer>,
-    rendered_image: Option<egui::ColorImage>,
-    texture_handle: Option<egui::TextureHandle>,
     output_texture_id: Option<egui::TextureId>,
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
@@ -109,8 +106,6 @@ impl FractronApp {
         Self {
             flame: flame.clone(),
             gpu_renderer,
-            rendered_image: None,
-            texture_handle: None,
             output_texture_id: None,
             pan_camera_start: None,
             pan_anchor_fractal: None,
