@@ -45,6 +45,10 @@ pub struct GpuVariEntry {
 
 #[allow(dead_code)]
 pub struct GpuRenderer {
+    // wgpu device and queue
+    device: Device,
+    queue: Queue,
+
     // Pipelines
     iterate_pipeline: ComputePipeline,
     tonemap_pipeline: ComputePipeline,
@@ -81,8 +85,8 @@ pub struct GpuRenderer {
 impl GpuRenderer {
     /// Initialize GPU renderer with output dimensions in physical pixels.
     pub fn new(
-        device: &Device,
-        queue: &Queue,
+        device: Device,
+        queue: Queue,
         flame: &Flame,
         output_width: u32,
         output_height: u32,
@@ -477,6 +481,8 @@ impl GpuRenderer {
             output_texture_view,
             output_width,
             output_height,
+            device,
+            queue,
             frame_count: 0,
             iteration_count: 0,
             iterate_bind_group,
@@ -488,15 +494,15 @@ impl GpuRenderer {
     ///
     /// This updates fields packed into the flat flame buffer, including camera transform
     /// and tone-mapping parameters.
-    pub fn update_flame(&self, queue: &Queue, flame: &Flame) {
+    pub fn update_flame(&self, flame: &Flame) {
         let gpu_flame_flat = Self::flame_to_gpu_flat(flame, self.output_width, self.output_height);
-        queue.write_buffer(&self.flame_buffer, 0, bytemuck::cast_slice(&gpu_flame_flat));
+        self.queue.write_buffer(&self.flame_buffer, 0, bytemuck::cast_slice(&gpu_flame_flat));
     }
 
     /// Clear the histogram buffer and reset render statistics.
     /// Both iteration_count and frame_count are reset to 0.
-    pub fn clear_histogram(&mut self, queue: &Queue) {
-        queue.write_buffer(
+    pub fn clear_histogram(&mut self) {
+        self.queue.write_buffer(
             &self.histogram_buffer,
             0,
             &vec![0u8; (self.output_width * self.output_height * 16) as usize],
@@ -509,26 +515,26 @@ impl GpuRenderer {
         self.frame_count
     }
 
-    pub fn advance_frame(&mut self, device: &Device, queue: &Queue, should_clear_histogram: bool) {
+    pub fn advance_frame(&mut self, should_clear_histogram: bool) {
         if should_clear_histogram {
-            self.clear_histogram(queue);
+            self.clear_histogram();
         }
-        self.iterate(queue, device, 65536);
-        self.tonemap(queue, device);
+        self.iterate(65536);
+        self.tonemap();
         self.frame_count += 1;
     }
 
-    fn iterate(&mut self, queue: &Queue, device: &Device, num_threads: u32) {
+    fn iterate(&mut self, num_threads: u32) {
         // Write render_params for the iterate shader (uses width, height, frame_count for RNG).
         // total_iters fields are not read by the iterate shader, so zero is fine here.
         // Format: [width, height, frame_count, total_iters_low, total_iters_high, reserved]
         let render_params_pre = [self.output_width, self.output_height, self.frame_count, 0u32, 0u32, 0u32];
-        queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params_pre));
+        self.queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params_pre));
 
         // Reset dot_count_buffer to zero before iterate
-        queue.write_buffer(&self.dot_count_buffer, 0, bytemuck::cast_slice(&[0u32, 0u32, 0u32, 0u32]));
+        self.queue.write_buffer(&self.dot_count_buffer, 0, bytemuck::cast_slice(&[0u32, 0u32, 0u32, 0u32]));
         
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("iterate_encoder"),
         });
         
@@ -548,10 +554,10 @@ impl GpuRenderer {
             encoder.copy_buffer_to_buffer(&self.histogram_buffer, 0, &self.histogram_staging_buffer, 0, copy_size);
         }
         
-        queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(std::iter::once(encoder.finish()));
 
         // Wait for GPU work to complete
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
 
         // This frame's iterations are now in the histogram — update the count.
         self.iteration_count += (THREADS_PER_FRAME as u64) * (ITERATIONS_PER_THREAD as u64);
@@ -560,12 +566,12 @@ impl GpuRenderer {
         let total_iters_low = (self.iteration_count & 0xFFFFFFFF) as u32;
         let total_iters_high = ((self.iteration_count >> 32) & 0xFFFFFFFF) as u32;
         let render_params_post = [self.output_width, self.output_height, self.frame_count, total_iters_low, total_iters_high, 0u32];
-        queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params_post));
+        self.queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params_post));
     }
     
     
-    fn tonemap(&self, queue: &Queue, device: &Device) {
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+    fn tonemap(&self) {
+        let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("tonemap_encoder"),
         });
         
@@ -579,7 +585,7 @@ impl GpuRenderer {
             cpass.dispatch_workgroups((self.output_width + 15) / 16, (self.output_height + 15) / 16, 1);
         }
         
-        queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(std::iter::once(encoder.finish()));
     }
     
     #[allow(dead_code)]
@@ -590,10 +596,14 @@ impl GpuRenderer {
     pub fn output_texture_view(&self) -> &TextureView {
         &self.output_texture_view
     }
+
+    pub fn device(&self) -> &Device {
+        &self.device
+    }
     
     /// Read the output texture back to CPU as RGBA8 data (synchronous with device.poll)
     #[allow(dead_code)]
-    pub fn read_output_to_vec(&self, device: &Device, queue: &Queue) -> Vec<u8> {
+    pub fn read_output_to_vec(&self) -> Vec<u8> {
         let extent = self.output_texture.size();
         let width = extent.width as usize;
         let height = extent.height as usize;
@@ -604,7 +614,7 @@ impl GpuRenderer {
         let total_bytes = bytes_per_row * height;
         
         // Create staging buffer
-        let staging_buffer = device.create_buffer(&BufferDescriptor {
+        let staging_buffer = self.device.create_buffer(&BufferDescriptor {
             label: Some("output_readback_staging"),
             size: total_bytes as u64,
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
@@ -612,7 +622,7 @@ impl GpuRenderer {
         });
         
         // Copy texture to staging buffer
-        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("readback_encoder"),
         });
         
@@ -635,10 +645,10 @@ impl GpuRenderer {
         );
         
         // Submit the copy command
-        queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(std::iter::once(encoder.finish()));
         
         // Force GPU to complete all submitted work
-        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         
         // Now request map - it should succeed immediately since work is done
         let mut mapped_successfully = false;
@@ -646,7 +656,7 @@ impl GpuRenderer {
             staging_buffer.slice(..).map_async(MapMode::Read, |_| {});
             
             // Poll again to process the map request
-            let _ = device.poll(wgpu::PollType::wait_indefinitely());
+            let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
             
             // Try to get the mapped range
             if let Ok(_) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -690,8 +700,6 @@ impl GpuRenderer {
 
     pub fn resize(
         &mut self,
-        device: &Device,
-        queue: &Queue,
         new_width: u32,
         new_height: u32,
     ) -> Result<(), String> {
@@ -702,12 +710,15 @@ impl GpuRenderer {
             return Ok(());
         }
 
+        // Wait for GPU to finish before recreating buffers
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+
         eprintln!(
             "Resizing renderer output from {}x{} to {}x{}",
             self.output_width, self.output_height, new_width, new_height
         );
 
-        let histogram_buffer = device.create_buffer(&BufferDescriptor {
+        let histogram_buffer = self.device.create_buffer(&BufferDescriptor {
             label: Some("histogram_ssbo"),
             size: (new_width * new_height * 16) as u64,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
@@ -721,14 +732,14 @@ impl GpuRenderer {
         }
         histogram_buffer.unmap();
 
-        let histogram_staging_buffer = device.create_buffer(&BufferDescriptor {
+        let histogram_staging_buffer = self.device.create_buffer(&BufferDescriptor {
             label: Some("histogram_staging"),
             size: (new_width * new_height * 16) as u64,
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
 
-        let output_texture = device.create_texture(&TextureDescriptor {
+        let output_texture = self.device.create_texture(&TextureDescriptor {
             label: Some("output_texture"),
             size: Extent3d {
                 width: new_width,
@@ -744,7 +755,7 @@ impl GpuRenderer {
         });
         let output_texture_view = output_texture.create_view(&TextureViewDescriptor::default());
 
-        let iterate_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let iterate_bind_group_layout = self.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("iterate_bgl"),
             entries: &[
                 BindGroupLayoutEntry {
@@ -826,7 +837,7 @@ impl GpuRenderer {
             ],
         });
 
-        let iterate_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        let iterate_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("iterate_bg"),
             layout: &iterate_bind_group_layout,
             entries: &[
@@ -841,7 +852,7 @@ impl GpuRenderer {
             ],
         });
 
-        let tonemap_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let tonemap_bind_group_layout = self.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("tonemap_bgl"),
             entries: &[
                 BindGroupLayoutEntry {
@@ -897,7 +908,7 @@ impl GpuRenderer {
             ],
         });
 
-        let tonemap_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        let tonemap_bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("tonemap_bg"),
             layout: &tonemap_bind_group_layout,
             entries: &[
@@ -910,7 +921,7 @@ impl GpuRenderer {
         });
 
         let resized_render_params = [new_width, new_height, self.frame_count, 0u32, 0u32, 0u32];
-        queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&resized_render_params));
+        self.queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&resized_render_params));
 
         self.histogram_buffer = histogram_buffer;
         self.histogram_staging_buffer = histogram_staging_buffer;

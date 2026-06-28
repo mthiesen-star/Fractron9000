@@ -5,7 +5,6 @@ mod camera_math;
 use gpu::GpuRenderer;
 use fractal_core::flame::Flame;
 use fractal_core::io::parse_flame_file;
-use wgpu::{Device, Queue};
 use glam::{Mat3, Vec2};
 use camera_math::*;
 
@@ -44,8 +43,6 @@ const ZOOM_SCROLL_SENSITIVITY: f32 = 0.0050;
 pub struct FractronApp {
     flame: Flame,
     gpu_renderer: Option<GpuRenderer>,
-    device: Option<Device>,
-    queue: Option<Queue>,
     rendered_image: Option<egui::ColorImage>,
     texture_handle: Option<egui::TextureHandle>,
     output_texture_id: Option<egui::TextureId>,
@@ -90,34 +87,28 @@ impl FractronApp {
             );
         }
         
-        let (gpu_renderer, device, queue) = {
-            if let Some(render_state) = cc.wgpu_render_state.as_ref() {
-                let device = render_state.device.clone();
-                let queue = render_state.queue.clone();
-                match GpuRenderer::new(
-                    &device,
-                    &queue,
-                    &flame,
-                    1024,
-                    768,
-                ) {
-                    Ok(r) => (Some(r), Some(device), Some(queue)),
-                    Err(e) => {
-                        log::error!("Failed to initialize GPU renderer: {}", e);
-                        (None, None, None)
-                    }
+        let gpu_renderer = if let Some(render_state) = cc.wgpu_render_state.as_ref() {
+            match GpuRenderer::new(
+                render_state.device.clone(),
+                render_state.queue.clone(),
+                &flame,
+                1024,
+                768,
+            ) {
+                Ok(r) => Some(r),
+                Err(e) => {
+                    log::error!("Failed to initialize GPU renderer: {}", e);
+                    None
                 }
-            } else {
-                log::error!("No wgpu render state available");
-                (None, None, None)
             }
+        } else {
+            log::error!("No wgpu render state available");
+            None
         };
         
         Self {
             flame: flame.clone(),
             gpu_renderer,
-            device,
-            queue,
             rendered_image: None,
             texture_handle: None,
             output_texture_id: None,
@@ -322,45 +313,37 @@ impl FractronApp {
             });
 
             if let Some(renderer) = &mut self.gpu_renderer {
-                if let (Some(device), Some(queue)) = (&self.device, &self.queue) {
-                    if renderer.needs_resize(target_width, target_height) {
-                        let _ = device.poll(wgpu::PollType::wait_indefinitely());
-                        if let Err(e) = renderer.resize(device, queue, target_width, target_height) {
-                            eprintln!("Failed to resize renderer output: {}", e);
-                            ui.label("Resize failed. See console for details.");
-                            status_right = "Resize error";
-                            return;
-                        }
-                        self.output_texture_id = None;
+                if renderer.needs_resize(target_width, target_height) {
+                    if let Err(e) = renderer.resize(target_width, target_height) {
+                        eprintln!("Failed to resize renderer output: {}", e);
+                        ui.label("Resize failed. See console for details.");
+                        status_right = "Resize error";
+                        return;
                     }
-
-                    if flame_dirty {
-                        renderer.update_flame(queue, &self.flame);
-                    }
-
-                    // Detect if any flame parameters have changed to clear histogram
-                    let flame_changed = self.flame != self.last_flame;
-                    let should_clear_histogram = flame_dirty || flame_changed;
-                    
-                    // Update last_flame for next frame comparison
-                    if flame_changed {
-                        self.last_flame = self.flame.clone();
-                    }
-
-                    //Self::advance_renderer_frame(renderer, device, queue, should_clear_histogram);
-                    renderer.advance_frame(device, queue, should_clear_histogram);
-                    status_right = Self::present_output_texture(
-                        ui,
-                        renderer,
-                        device,
-                        viewport_rect.size(),
-                        _frame,
-                        &mut self.output_texture_id,
-                    );
-                } else {
-                    ui.label("GPU device/queue not available");
-                    status_right = "Device unavailable";
+                    self.output_texture_id = None;
                 }
+
+                if flame_dirty {
+                    renderer.update_flame(&self.flame);
+                }
+
+                // Detect if any flame parameters have changed to clear histogram
+                let flame_changed = self.flame != self.last_flame;
+                let should_clear_histogram = flame_dirty || flame_changed;
+                
+                // Update last_flame for next frame comparison
+                if flame_changed {
+                    self.last_flame = self.flame.clone();
+                }
+
+                renderer.advance_frame(should_clear_histogram);
+                status_right = Self::present_output_texture(
+                    ui,
+                    renderer,
+                    viewport_rect.size(),
+                    _frame,
+                    &mut self.output_texture_id,
+                );
             } else {
                 ui.label("GPU renderer not initialized. Check console for errors.");
                 status_right = "Renderer unavailable";
@@ -448,7 +431,6 @@ impl FractronApp {
     fn present_output_texture(
         ui: &mut egui::Ui,
         renderer: &GpuRenderer,
-        device: &Device,
         viewport_size: egui::Vec2,
         frame: &mut eframe::Frame,
         output_texture_id: &mut Option<egui::TextureId>,
@@ -458,7 +440,7 @@ impl FractronApp {
                 id
             } else {
                 let id = render_state.renderer.write().register_native_texture(
-                    device,
+                    renderer.device(),
                     renderer.output_texture_view(),
                     wgpu::FilterMode::Linear,
                 );
