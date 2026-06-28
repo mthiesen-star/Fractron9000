@@ -446,16 +446,9 @@ impl FractronApp {
     }
 
     fn advance_renderer_frame(renderer: &mut GpuRenderer, device: &Device, queue: &Queue, should_clear_histogram: bool) {
-        // On a clear, reset frame_count to 0 first so the increment below sets it to 1,
-        // ensuring total_iters matches the histogram contents on the very first frame.
-        if should_clear_histogram {
-            renderer.reset_frame_count();
-        }
-        // Increment before iterate() so render_params carries the correct total_iters
-        // when tonemap runs (histogram and iteration count are always in sync).
-        renderer.increment_frame_count();
         renderer.iterate(queue, device, 65536, should_clear_histogram);
         renderer.tonemap(queue, device);
+        renderer.increment_frame_count();
     }
 
     fn present_output_texture(

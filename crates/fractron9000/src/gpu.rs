@@ -71,8 +71,9 @@ pub struct GpuRenderer {
     output_width: u32,
     output_height: u32,
     
-    // Frame counter for RNG seeding
+    // Render statistics (reset on histogram clear)
     frame_count: u32,
+    iteration_count: u64,
     
     // Bind groups
     iterate_bind_group: BindGroup,
@@ -479,6 +480,7 @@ impl GpuRenderer {
             output_width,
             output_height,
             frame_count: 0,
+            iteration_count: 0,
             iterate_bind_group,
             tonemap_bind_group,
         })
@@ -493,52 +495,37 @@ impl GpuRenderer {
         queue.write_buffer(&self.flame_buffer, 0, bytemuck::cast_slice(&gpu_flame_flat));
     }
 
-    /// Clear the histogram buffer to zeros (call when camera or flame parameters change).
-    /// Does NOT reset frame_count — callers are responsible for that separately.
+    /// Clear the histogram buffer and reset render statistics.
+    /// Both iteration_count and frame_count are reset to 0.
     pub fn clear_histogram(&mut self, queue: &Queue) {
         queue.write_buffer(
             &self.histogram_buffer,
             0,
             &vec![0u8; (self.output_width * self.output_height * 16) as usize],
         );
+        self.iteration_count = 0;
+        self.frame_count = 0;
     }
-    
-    /// Get the current frame counter (used for RNG seeding).
+
     pub fn frame_count(&self) -> u32 {
         self.frame_count
     }
 
-    /// Reset the frame counter to zero (call before a histogram clear).
-    pub fn reset_frame_count(&mut self) {
-        self.frame_count = 0;
-    }
-    
-    /// Increment the frame counter and return the new value.
-    pub fn increment_frame_count(&mut self) -> u32 {
+    pub fn increment_frame_count(&mut self) {
         self.frame_count += 1;
-        self.frame_count
     }
-    
-    /// Calculate total iteration count from frame count.
-    /// Formula: frame_count × threads_per_frame × iterations_per_thread
-    fn calculate_total_iterations(&self) -> u64 {
-        (self.frame_count as u64) * (THREADS_PER_FRAME as u64) * (ITERATIONS_PER_THREAD as u64)
-    }
-    
+
     pub fn iterate(&mut self, queue: &Queue, device: &Device, num_threads: u32, should_clear_histogram: bool) {
-        // Clear histogram if camera or flame parameters changed
         if should_clear_histogram {
             self.clear_histogram(queue);
         }
-        
-        // Update render_params with current frame count and total iteration count
+
+        // Write render_params for the iterate shader (uses width, height, frame_count for RNG).
+        // total_iters fields are not read by the iterate shader, so zero is fine here.
         // Format: [width, height, frame_count, total_iters_low, total_iters_high, reserved]
-        let total_iters = self.calculate_total_iterations();
-        let total_iters_low = (total_iters & 0xFFFFFFFF) as u32;
-        let total_iters_high = ((total_iters >> 32) & 0xFFFFFFFF) as u32;
-        let render_params = [self.output_width, self.output_height, self.frame_count, total_iters_low, total_iters_high, 0u32];
-        queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params));
-        
+        let render_params_pre = [self.output_width, self.output_height, self.frame_count, 0u32, 0u32, 0u32];
+        queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params_pre));
+
         // Reset dot_count_buffer to zero before iterate
         queue.write_buffer(&self.dot_count_buffer, 0, bytemuck::cast_slice(&[0u32, 0u32, 0u32, 0u32]));
         
@@ -563,11 +550,18 @@ impl GpuRenderer {
         }
         
         queue.submit(std::iter::once(encoder.finish()));
-        
+
         // Wait for GPU work to complete
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
-        
-        // No histogram readback needed—iteration count is computed directly from frame count
+
+        // This frame's iterations are now in the histogram — update the count.
+        self.iteration_count += (THREADS_PER_FRAME as u64) * (ITERATIONS_PER_THREAD as u64);
+
+        // Rewrite render_params with the updated iteration_count for tonemap to read.
+        let total_iters_low = (self.iteration_count & 0xFFFFFFFF) as u32;
+        let total_iters_high = ((self.iteration_count >> 32) & 0xFFFFFFFF) as u32;
+        let render_params_post = [self.output_width, self.output_height, self.frame_count, total_iters_low, total_iters_high, 0u32];
+        queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params_post));
     }
     
     
