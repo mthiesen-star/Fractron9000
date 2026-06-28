@@ -38,6 +38,9 @@ fn load_flame_from_file(file_path: &str, flame_name: &str) -> Result<Flame, Stri
 
 
 const ZOOM_SCROLL_SENSITIVITY: f32 = 0.0050;
+const TRIAD_LINE_STROKE: f32 = 1.0;
+const TRIAD_POINT_RADIUS: f32 = 5.0;
+const TRIAD_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 220, 220);
 
 pub struct FractronApp {
     flame: Flame,
@@ -339,6 +342,8 @@ impl FractronApp {
                     _frame,
                     &mut self.output_texture_id,
                 );
+
+                Self::render_affine_triads(ui, viewport_rect, &self.flame);
             } else {
                 ui.label("GPU renderer not initialized. Check console for errors.");
                 status_right = "Renderer unavailable";
@@ -450,6 +455,32 @@ impl FractronApp {
         } else {
             ui.label("Render state unavailable");
             "Render state unavailable"
+        }
+    }
+
+    fn render_affine_triads(ui: &mut egui::Ui, viewport_rect: egui::Rect, flame: &Flame) {
+        let painter = ui.painter();
+
+        for branch in &flame.branches {
+            let pre = branch.pre_affine;
+            let origin = pre.transform_point2(Vec2::ZERO);
+            let x_point = pre.transform_point2(Vec2::X);
+            let y_point = pre.transform_point2(Vec2::Y);
+
+            let (Some(o_ui), Some(x_ui), Some(y_ui)) = (
+                fractal_to_ui_space(viewport_rect, origin, flame.camera_transform),
+                fractal_to_ui_space(viewport_rect, x_point, flame.camera_transform),
+                fractal_to_ui_space(viewport_rect, y_point, flame.camera_transform),
+            ) else {
+                continue;
+            };
+
+            painter.line_segment([o_ui, x_ui], egui::Stroke::new(TRIAD_LINE_STROKE, TRIAD_COLOR));
+            painter.line_segment([o_ui, y_ui], egui::Stroke::new(TRIAD_LINE_STROKE, TRIAD_COLOR));
+
+            painter.circle_filled(o_ui, TRIAD_POINT_RADIUS, TRIAD_COLOR);
+            painter.circle_filled(x_ui, TRIAD_POINT_RADIUS, TRIAD_COLOR);
+            painter.circle_filled(y_ui, TRIAD_POINT_RADIUS, TRIAD_COLOR);
         }
     }
 

@@ -22,6 +22,23 @@ pub fn ui_to_fractal_space(viewport_rect: egui::Rect, pos: egui::Pos2, camera: M
     Some(camera.inverse().transform_point2(screen))
 }
 
+pub fn fractal_to_ui_space(viewport_rect: egui::Rect, point: Vec2, camera: Mat3) -> Option<egui::Pos2> {
+    let width = viewport_rect.width();
+    let height = viewport_rect.height();
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+
+    let screen = camera.transform_point2(point);
+    let u = (screen.x + 1.0) * 0.5;
+    let v = (1.0 - screen.y) * 0.5;
+
+    Some(egui::pos2(
+        viewport_rect.left() + u * width,
+        viewport_rect.top() + v * height,
+    ))
+}
+
 pub fn solve_pan_camera_transform(
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
