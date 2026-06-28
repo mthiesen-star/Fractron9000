@@ -2,8 +2,9 @@
 
 use wgpu::*;
 use wgpu::util::DeviceExt;
-use glam::{Mat3, Vec3};
+use glam::Mat3;
 use fractal_core::flame::Flame;
+use crate::camera_math::compute_vps_transform;
 
 // Iteration constants (matching chaos game chaos settings)
 const THREADS_PER_FRAME: u32 = 65536;
@@ -881,24 +882,9 @@ impl GpuRenderer {
     // TODO: vps_transform is a derived rendering param (flame + resolution), not a pure flame
     // property. Move it (and invPixArea) to a dedicated SceneData buffer in a future refactor.
 
-    /// Compute the View-Projection-Screen transform: maps fractal space directly to histogram
-    /// pixel coordinates.  This is screenTransform × cameraTransform, where screenTransform
-    /// scales the ±1 screen space to [0, width) × [0, height) without a Y-flip (the flip
-    /// happens at display time in the egui texture presentation).
-    fn compute_vps_transform(camera: Mat3, width: u32, height: u32) -> Mat3 {
-        let hw = width as f32 / 2.0;
-        let hh = height as f32 / 2.0;
-        let screen_transform = Mat3::from_cols(
-            Vec3::new(hw,  0.0, 0.0),
-            Vec3::new(0.0, hh,  0.0),
-            Vec3::new(hw,  hh,  1.0),
-        );
-        screen_transform * camera
-    }
-
     fn flame_to_gpu_flat(flame: &Flame, width: u32, height: u32) -> Vec<f32> {
         let camera_transform = GpuAffine::from_mat3(flame.camera_transform);
-        let vps = GpuAffine::from_mat3(Self::compute_vps_transform(flame.camera_transform, width, height));
+        let vps = GpuAffine::from_mat3(compute_vps_transform(flame.camera_transform, width, height));
         let branch_count = flame.branches.len() as u32;
         
         vec![

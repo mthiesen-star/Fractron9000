@@ -1,4 +1,18 @@
-use glam::{Mat3, Vec2};
+use glam::{Mat3, Vec2, Vec3};
+
+/// Compute the View-Projection-Screen transform used by both renderer and UI mapping.
+///
+/// This maps fractal space directly to histogram pixel space.
+pub fn compute_vps_transform(camera: Mat3, width: u32, height: u32) -> Mat3 {
+    let hw = width as f32 / 2.0;
+    let hh = height as f32 / 2.0;
+    let screen_transform = Mat3::from_cols(
+        Vec3::new(hw, 0.0, 0.0),
+        Vec3::new(0.0, hh, 0.0),
+        Vec3::new(hw, hh, 1.0),
+    );
+    screen_transform * camera
+}
 
 pub fn ui_to_screen_space(viewport_rect: egui::Rect, pos: egui::Pos2) -> Option<Vec2> {
     let width = viewport_rect.width();
@@ -12,30 +26,64 @@ pub fn ui_to_screen_space(viewport_rect: egui::Rect, pos: egui::Pos2) -> Option<
     Some(Vec2::new(2.0 * u - 1.0, 1.0 - 2.0 * v))
 }
 
-pub fn ui_to_fractal_space(viewport_rect: egui::Rect, pos: egui::Pos2, camera: Mat3) -> Option<Vec2> {
-    let screen = ui_to_screen_space(viewport_rect, pos)?;
-    let det = camera.determinant();
+pub fn ui_to_histogram_space(
+    viewport_rect: egui::Rect,
+    pos: egui::Pos2,
+    histogram_width: u32,
+    histogram_height: u32,
+) -> Option<Vec2> {
+    let width = viewport_rect.width();
+    let height = viewport_rect.height();
+    if width <= 0.0 || height <= 0.0 || histogram_width == 0 || histogram_height == 0 {
+        return None;
+    }
+
+    let u = (pos.x - viewport_rect.left()) / width;
+    let v_ui = (pos.y - viewport_rect.top()) / height;
+
+    let hist_x = u * histogram_width as f32;
+    let hist_y = (1.0 - v_ui) * histogram_height as f32;
+    Some(Vec2::new(hist_x, hist_y))
+}
+
+pub fn ui_to_fractal_space(
+    viewport_rect: egui::Rect,
+    pos: egui::Pos2,
+    camera: Mat3,
+    histogram_width: u32,
+    histogram_height: u32,
+) -> Option<Vec2> {
+    let hist = ui_to_histogram_space(viewport_rect, pos, histogram_width, histogram_height)?;
+    let vps = compute_vps_transform(camera, histogram_width, histogram_height);
+    let det = vps.determinant();
     if det.abs() <= 1e-8 {
         return None;
     }
 
-    Some(camera.inverse().transform_point2(screen))
+    Some(vps.inverse().transform_point2(hist))
 }
 
-pub fn fractal_to_ui_space(viewport_rect: egui::Rect, point: Vec2, camera: Mat3) -> Option<egui::Pos2> {
+pub fn fractal_to_ui_space(
+    viewport_rect: egui::Rect,
+    point: Vec2,
+    camera: Mat3,
+    histogram_width: u32,
+    histogram_height: u32,
+) -> Option<egui::Pos2> {
     let width = viewport_rect.width();
     let height = viewport_rect.height();
-    if width <= 0.0 || height <= 0.0 {
+    if width <= 0.0 || height <= 0.0 || histogram_width == 0 || histogram_height == 0 {
         return None;
     }
 
-    let screen = camera.transform_point2(point);
-    let u = (screen.x + 1.0) * 0.5;
-    let v = (1.0 - screen.y) * 0.5;
+    let vps = compute_vps_transform(camera, histogram_width, histogram_height);
+    let hist = vps.transform_point2(point);
+    let u = hist.x / histogram_width as f32;
+    let v_ui = 1.0 - (hist.y / histogram_height as f32);
 
     Some(egui::pos2(
         viewport_rect.left() + u * width,
-        viewport_rect.top() + v * height,
+        viewport_rect.top() + v_ui * height,
     ))
 }
 

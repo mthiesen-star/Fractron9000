@@ -269,7 +269,13 @@ impl FractronApp {
                 {
                     let camera_start = self.flame.camera_transform;
                     self.pan_camera_start = Some(camera_start);
-                    self.pan_anchor_fractal = ui_to_fractal_space(viewport_rect, pos, camera_start);
+                    self.pan_anchor_fractal = ui_to_fractal_space(
+                        viewport_rect,
+                        pos,
+                        camera_start,
+                        target_width,
+                        target_height,
+                    );
                 }
 
                 if i.pointer.button_released(egui::PointerButton::Middle) {
@@ -284,7 +290,13 @@ impl FractronApp {
                 {
                     let zoom_factor = (scroll_y * ZOOM_SCROLL_SENSITIVITY).exp();
                     if let (Some(anchor_fractal), Some(target_screen)) = (
-                        ui_to_fractal_space(viewport_rect, cursor_pos, self.flame.camera_transform),
+                        ui_to_fractal_space(
+                            viewport_rect,
+                            cursor_pos,
+                            self.flame.camera_transform,
+                            target_width,
+                            target_height,
+                        ),
                         ui_to_screen_space(viewport_rect, cursor_pos),
                     ) {
                         if let Some(next_camera) = solve_zoom_camera_transform(
@@ -458,8 +470,15 @@ impl FractronApp {
         }
     }
 
-    fn render_affine_triads(ui: &mut egui::Ui, viewport_rect: egui::Rect, flame: &Flame) {
+    fn render_affine_triads(
+        ui: &mut egui::Ui,
+        viewport_rect: egui::Rect,
+        flame: &Flame,
+    ) {
         let painter = ui.painter();
+        let pixels_per_point = ui.ctx().pixels_per_point();
+        let histogram_width = (viewport_rect.width() * pixels_per_point).round().max(1.0) as u32;
+        let histogram_height = (viewport_rect.height() * pixels_per_point).round().max(1.0) as u32;
 
         for branch in &flame.branches {
             let pre = branch.pre_affine;
@@ -468,9 +487,27 @@ impl FractronApp {
             let y_point = pre.transform_point2(Vec2::Y);
 
             let (Some(o_ui), Some(x_ui), Some(y_ui)) = (
-                fractal_to_ui_space(viewport_rect, origin, flame.camera_transform),
-                fractal_to_ui_space(viewport_rect, x_point, flame.camera_transform),
-                fractal_to_ui_space(viewport_rect, y_point, flame.camera_transform),
+                fractal_to_ui_space(
+                    viewport_rect,
+                    origin,
+                    flame.camera_transform,
+                    histogram_width,
+                    histogram_height,
+                ),
+                fractal_to_ui_space(
+                    viewport_rect,
+                    x_point,
+                    flame.camera_transform,
+                    histogram_width,
+                    histogram_height,
+                ),
+                fractal_to_ui_space(
+                    viewport_rect,
+                    y_point,
+                    flame.camera_transform,
+                    histogram_width,
+                    histogram_height,
+                ),
             ) else {
                 continue;
             };
