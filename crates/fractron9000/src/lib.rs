@@ -40,7 +40,9 @@ fn load_flame_from_file(file_path: &str, flame_name: &str) -> Result<Flame, Stri
 const ZOOM_SCROLL_SENSITIVITY: f32 = 0.0050;
 const TRIAD_LINE_STROKE: f32 = 1.0;
 const TRIAD_POINT_RADIUS: f32 = 5.0;
+const TRIAD_HOVER_RADIUS: f32 = 8.0;
 const TRIAD_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 220, 220);
+const TRIAD_HOVER_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
 
 pub struct FractronApp {
     flame: Flame,
@@ -480,6 +482,8 @@ impl FractronApp {
         histogram_height: u32,
     ) {
         let painter = ui.painter_at(viewport_rect);
+        let hover_pos = ui.input(|i| i.pointer.hover_pos());
+        let mut any_point_hovered = false;
 
         for branch in &flame.branches {
             let pre = branch.pre_affine;
@@ -513,12 +517,40 @@ impl FractronApp {
                 continue;
             };
 
+            let is_origin_hovered = hover_pos.is_some_and(|pos| pos.distance(o_ui) <= TRIAD_HOVER_RADIUS);
+            let is_x_hovered = hover_pos.is_some_and(|pos| pos.distance(x_ui) <= TRIAD_HOVER_RADIUS);
+            let is_y_hovered = hover_pos.is_some_and(|pos| pos.distance(y_ui) <= TRIAD_HOVER_RADIUS);
+            any_point_hovered |= is_origin_hovered || is_x_hovered || is_y_hovered;
+
+            let origin_color = if is_origin_hovered { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
+            let x_color = if is_x_hovered { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
+            let y_color = if is_y_hovered { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
+
+            let origin_radius = if is_origin_hovered { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
+            let x_radius = if is_x_hovered { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
+            let y_radius = if is_y_hovered { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
+            let hover_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 30, 30));
+
             painter.line_segment([o_ui, x_ui], egui::Stroke::new(TRIAD_LINE_STROKE, TRIAD_COLOR));
             painter.line_segment([o_ui, y_ui], egui::Stroke::new(TRIAD_LINE_STROKE, TRIAD_COLOR));
 
-            painter.circle_filled(o_ui, TRIAD_POINT_RADIUS, TRIAD_COLOR);
-            painter.circle_filled(x_ui, TRIAD_POINT_RADIUS, TRIAD_COLOR);
-            painter.circle_filled(y_ui, TRIAD_POINT_RADIUS, TRIAD_COLOR);
+            painter.circle_filled(o_ui, origin_radius, origin_color);
+            painter.circle_filled(x_ui, x_radius, x_color);
+            painter.circle_filled(y_ui, y_radius, y_color);
+
+            if is_origin_hovered {
+                painter.circle_stroke(o_ui, origin_radius, hover_stroke);
+            }
+            if is_x_hovered {
+                painter.circle_stroke(x_ui, x_radius, hover_stroke);
+            }
+            if is_y_hovered {
+                painter.circle_stroke(y_ui, y_radius, hover_stroke);
+            }
+        }
+
+        if any_point_hovered {
+            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grab);
         }
     }
 
