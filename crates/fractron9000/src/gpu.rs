@@ -8,8 +8,6 @@ use fractal_core::flame::Flame;
 // Iteration constants (matching chaos game chaos settings)
 const THREADS_PER_FRAME: u32 = 65536;
 const ITERATIONS_PER_THREAD: u32 = 1000;
-const TRANSIENT_SKIP: u32 = 20;  // First 20 iterations discarded per thread
-const EFFECTIVE_ITERATIONS_PER_THREAD: u32 = ITERATIONS_PER_THREAD - TRANSIENT_SKIP;
 
 // ============================================================================
 // GPU BUFFER STRUCTURES (internal helpers only - no repr(C) needed)
