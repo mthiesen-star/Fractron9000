@@ -163,3 +163,124 @@ pub fn solve_aspect_camera_transform(camera_start: Mat3, viewport_aspect: f32) -
     next_camera.x_axis.y = x_dir.y * desired_x_len;
     Some(next_camera)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_fractal_ui_fractal_preserves_point() {
+        // Realistic viewport in UI points and target histogram in physical pixels.
+        let viewport_rect = egui::Rect::from_min_size(
+            egui::pos2(140.0, 72.0),
+            egui::vec2(1366.0, 768.0),
+        );
+        let histogram_width = 2048;
+        let histogram_height = 1152;
+
+        // Non-trivial camera: scale, slight shear, translation.
+        let camera = Mat3::from_cols(
+            Vec3::new(0.92, 0.06, 0.0),
+            Vec3::new(-0.04, 0.88, 0.0),
+            Vec3::new(0.17, -0.11, 1.0),
+        );
+
+        // Test a few points to ensure robust behavior across the view.
+        let points = [
+            Vec2::new(0.0, 0.0),
+            Vec2::new(-0.65, 0.35),
+            Vec2::new(0.72, -0.54),
+        ];
+
+        for original in points {
+            let ui_pos = fractal_to_ui_space(
+                viewport_rect,
+                original,
+                camera,
+                histogram_width,
+                histogram_height,
+            )
+            .expect("fractal_to_ui_space should produce a valid UI position");
+
+            let round_trip = ui_to_fractal_space(
+                viewport_rect,
+                ui_pos,
+                camera,
+                histogram_width,
+                histogram_height,
+            )
+            .expect("ui_to_fractal_space should produce a valid fractal position");
+
+            let eps = 1e-4;
+            assert!(
+                (round_trip.x - original.x).abs() <= eps,
+                "round-trip x mismatch: original={}, got={}",
+                original.x,
+                round_trip.x
+            );
+            assert!(
+                (round_trip.y - original.y).abs() <= eps,
+                "round-trip y mismatch: original={}, got={}",
+                original.y,
+                round_trip.y
+            );
+        }
+    }
+
+    #[test]
+    fn round_trip_ui_fractal_ui_preserves_position() {
+        // Match the same realistic conditions as the companion test.
+        let viewport_rect = egui::Rect::from_min_size(
+            egui::pos2(140.0, 72.0),
+            egui::vec2(1366.0, 768.0),
+        );
+        let histogram_width = 2048;
+        let histogram_height = 1152;
+
+        let camera = Mat3::from_cols(
+            Vec3::new(0.92, 0.06, 0.0),
+            Vec3::new(-0.04, 0.88, 0.0),
+            Vec3::new(0.17, -0.11, 1.0),
+        );
+
+        let ui_points = [
+            egui::pos2(260.0, 160.0),
+            egui::pos2(980.0, 380.0),
+            egui::pos2(1420.0, 740.0),
+        ];
+
+        for original in ui_points {
+            let fractal = ui_to_fractal_space(
+                viewport_rect,
+                original,
+                camera,
+                histogram_width,
+                histogram_height,
+            )
+            .expect("ui_to_fractal_space should produce a valid fractal position");
+
+            let round_trip = fractal_to_ui_space(
+                viewport_rect,
+                fractal,
+                camera,
+                histogram_width,
+                histogram_height,
+            )
+            .expect("fractal_to_ui_space should produce a valid UI position");
+
+            let eps = 1e-3;
+            assert!(
+                (round_trip.x - original.x).abs() <= eps,
+                "round-trip ui x mismatch: original={}, got={}",
+                original.x,
+                round_trip.x
+            );
+            assert!(
+                (round_trip.y - original.y).abs() <= eps,
+                "round-trip ui y mismatch: original={}, got={}",
+                original.y,
+                round_trip.y
+            );
+        }
+    }
+}
