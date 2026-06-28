@@ -40,12 +40,12 @@ fn tone_map(r: f32, g: f32, b: f32, count: f32, flame_params: vec3<f32>, total_i
     let log_term = 1.0 + count * scale_constant;
     let log_a = TONE_C1 * brightness * log_b10(log_term);
     
-    // Normalize colors: divide by count to get average color per hit, then by 255 to
-    // convert from the u32 fixed-point accumulation range (0-255 per hit) back to [0, 1].
+    // Normalize colors: divide by count to get average color per hit, then by 16 to
+    // convert from the u32 fixed-point accumulation range (0-16 per hit) back to [0, 1].
     // No epsilon needed — the count < 0.5 guard above ensures count >= 1 here.
-    let r_avg = r / (count * 255.0);
-    let g_avg = g / (count * 255.0);
-    let b_avg = b / (count * 255.0);
+    let r_avg = r / (count * 16.0);
+    let g_avg = g / (count * 16.0);
+    let b_avg = b / (count * 16.0);
     
     // Apply the log intensity to each channel
     let log_r = log_a * r_avg;

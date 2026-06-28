@@ -38,10 +38,11 @@ fn sample_palette(chroma: vec2<f32>) -> vec3<f32> {
     return color.rgb;
 }
 
-/// Pack a float in [0, 1] into a u32 for accumulation (0-255 range).
+/// Pack a float in [0, 1] into a u32 for accumulation.
+/// Scale of 16 gives 4-bit color precision per hit, with overflow threshold at ~268M hits/channel.
 fn pack_color_channel(val: f32) -> u32 {
     let clamped = clamp(val, 0.0, 1.0);
-    return u32(clamped * 255.0);
+    return u32(clamped * 16.0);
 }
 
 fn pcg_random(state: ptr<function, u32>) -> f32 {

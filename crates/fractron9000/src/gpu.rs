@@ -493,19 +493,24 @@ impl GpuRenderer {
         queue.write_buffer(&self.flame_buffer, 0, bytemuck::cast_slice(&gpu_flame_flat));
     }
 
-    /// Clear the histogram buffer to zeros and reset frame counter (call when camera or flame parameters change).
+    /// Clear the histogram buffer to zeros (call when camera or flame parameters change).
+    /// Does NOT reset frame_count — callers are responsible for that separately.
     pub fn clear_histogram(&mut self, queue: &Queue) {
         queue.write_buffer(
             &self.histogram_buffer,
             0,
             &vec![0u8; (self.output_width * self.output_height * 16) as usize],
         );
-        self.frame_count = 0;
     }
     
     /// Get the current frame counter (used for RNG seeding).
     pub fn frame_count(&self) -> u32 {
         self.frame_count
+    }
+
+    /// Reset the frame counter to zero (call before a histogram clear).
+    pub fn reset_frame_count(&mut self) {
+        self.frame_count = 0;
     }
     
     /// Increment the frame counter and return the new value.
