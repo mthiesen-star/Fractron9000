@@ -5,7 +5,7 @@ mod camera_math;
 use gpu::GpuRenderer;
 use fractal_core::flame::Flame;
 use fractal_core::io::parse_flame_file;
-use glam::{Mat3, Vec2};
+use glam::Vec2;
 use camera_math::*;
 
 /// Load a named flame from a .flame file.
@@ -55,11 +55,10 @@ pub struct FractronApp {
     flame: Flame,
     gpu_renderer: Option<GpuRenderer>,
     output_texture_id: Option<egui::TextureId>,
-    pan_camera_start: Option<Mat3>,
+    drag_start_state: Option<Flame>,
     pan_anchor_fractal: Option<Vec2>,
     triad_drag_branch: Option<usize>,
     triad_drag_handle: Option<TriadHandle>,
-    triad_drag_pre_affine_start: Option<Mat3>,
     left_panel_width: f32,
     last_flame: Flame,  // Track complete flame state to detect any parameter changes
 }
@@ -122,11 +121,10 @@ impl FractronApp {
             flame: flame.clone(),
             gpu_renderer,
             output_texture_id: None,
-            pan_camera_start: None,
+            drag_start_state: None,
             pan_anchor_fractal: None,
             triad_drag_branch: None,
             triad_drag_handle: None,
-            triad_drag_pre_affine_start: None,
             left_panel_width: 128.0,
             last_flame: flame.clone(),  // Initialize with current flame state
         }
@@ -301,36 +299,38 @@ impl FractronApp {
                     if i.pointer.button_released(egui::PointerButton::Primary) {
                         self.triad_drag_branch = None;
                         self.triad_drag_handle = None;
-                        self.triad_drag_pre_affine_start = None;
+                        if self.pan_anchor_fractal.is_none() {
+                            self.drag_start_state = None;
+                        }
                     }
 
                     if i.pointer.button_pressed(egui::PointerButton::Primary)
                         && let Some((branch_index, handle)) = hovered_triad_handle
-                        && let Some(branch) = self.flame.branches.get(branch_index)
                     {
                         self.triad_drag_branch = Some(branch_index);
                         self.triad_drag_handle = Some(handle);
-                        self.triad_drag_pre_affine_start = Some(branch.pre_affine);
+                        self.drag_start_state = Some(self.flame.clone());
                     }
 
                     if i.pointer.button_pressed(egui::PointerButton::Middle)
                         && let Some(pos) = i.pointer.interact_pos()
                         && viewport_rect.contains(pos)
                     {
-                        let camera_start = self.flame.camera_transform;
-                        self.pan_camera_start = Some(camera_start);
+                        self.drag_start_state = Some(self.flame.clone());
                         self.pan_anchor_fractal = ui_to_fractal_space(
                             viewport_rect,
                             pos,
-                            camera_start,
+                            self.flame.camera_transform,
                             histogram_width,
                             histogram_height,
                         );
                     }
 
                     if i.pointer.button_released(egui::PointerButton::Middle) {
-                        self.pan_camera_start = None;
                         self.pan_anchor_fractal = None;
+                        if self.triad_drag_branch.is_none() {
+                            self.drag_start_state = None;
+                        }
                     }
 
                     let scroll_y = i.smooth_scroll_delta.y;
@@ -362,7 +362,7 @@ impl FractronApp {
                     }
 
                     if let Some(next_camera) = solve_pan_camera_transform(
-                        self.pan_camera_start,
+                        self.drag_start_state.as_ref().map(|s| s.camera_transform),
                         self.pan_anchor_fractal,
                         i.pointer.interact_pos(),
                         viewport_rect,
@@ -371,12 +371,16 @@ impl FractronApp {
                         flame_dirty = true;
                     }
 
-                    if let (Some(branch_index), Some(handle), Some(pre_affine_start), Some(pos)) = (
+                    if let (Some(branch_index), Some(handle), Some(pos)) = (
                         self.triad_drag_branch,
                         self.triad_drag_handle,
-                        self.triad_drag_pre_affine_start,
                         i.pointer.interact_pos(),
                     )
+                        && let Some(pre_affine_start) = self
+                            .drag_start_state
+                            .as_ref()
+                            .and_then(|s| s.branches.get(branch_index))
+                            .map(|b| b.pre_affine)
                         && let Some(pointer_fractal) = ui_to_fractal_space(
                             viewport_rect,
                             pos,
@@ -460,7 +464,9 @@ impl FractronApp {
             .map(|p| format!("{:.1},{:.1}", p.x, p.y))
             .unwrap_or_else(|| "none".to_string());
         let pan_camera_start = self
-            .pan_camera_start
+            .drag_start_state
+            .as_ref()
+            .map(|s| s.camera_transform)
             .map(|m| format!(
                 "[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}]",
                 m.x_axis.x, m.y_axis.x, m.z_axis.x, m.x_axis.y, m.y_axis.y, m.z_axis.y
