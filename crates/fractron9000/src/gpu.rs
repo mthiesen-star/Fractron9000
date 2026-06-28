@@ -509,15 +509,16 @@ impl GpuRenderer {
         self.frame_count
     }
 
-    pub fn increment_frame_count(&mut self) {
-        self.frame_count += 1;
-    }
-
-    pub fn iterate(&mut self, queue: &Queue, device: &Device, num_threads: u32, should_clear_histogram: bool) {
+    pub fn advance_frame(&mut self, device: &Device, queue: &Queue, should_clear_histogram: bool) {
         if should_clear_histogram {
             self.clear_histogram(queue);
         }
+        self.iterate(queue, device, 65536);
+        self.tonemap(queue, device);
+        self.frame_count += 1;
+    }
 
+    fn iterate(&mut self, queue: &Queue, device: &Device, num_threads: u32) {
         // Write render_params for the iterate shader (uses width, height, frame_count for RNG).
         // total_iters fields are not read by the iterate shader, so zero is fine here.
         // Format: [width, height, frame_count, total_iters_low, total_iters_high, reserved]
@@ -563,7 +564,7 @@ impl GpuRenderer {
     }
     
     
-    pub fn tonemap(&self, queue: &Queue, device: &Device) {
+    fn tonemap(&self, queue: &Queue, device: &Device) {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("tonemap_encoder"),
         });
@@ -580,8 +581,6 @@ impl GpuRenderer {
         
         queue.submit(std::iter::once(encoder.finish()));
     }
-
-
     
     #[allow(dead_code)]
     pub fn output_texture(&self) -> &Texture {

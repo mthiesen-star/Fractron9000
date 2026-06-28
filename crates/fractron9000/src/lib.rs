@@ -347,7 +347,8 @@ impl FractronApp {
                         self.last_flame = self.flame.clone();
                     }
 
-                    Self::advance_renderer_frame(renderer, device, queue, should_clear_histogram);
+                    //Self::advance_renderer_frame(renderer, device, queue, should_clear_histogram);
+                    renderer.advance_frame(device, queue, should_clear_histogram);
                     status_right = Self::present_output_texture(
                         ui,
                         renderer,
@@ -442,12 +443,6 @@ impl FractronApp {
         );
 
         (left_panel_rect, splitter_rect, viewport_rect)
-    }
-
-    fn advance_renderer_frame(renderer: &mut GpuRenderer, device: &Device, queue: &Queue, should_clear_histogram: bool) {
-        renderer.iterate(queue, device, 65536, should_clear_histogram);
-        renderer.tonemap(queue, device);
-        renderer.increment_frame_count();
     }
 
     fn present_output_texture(
