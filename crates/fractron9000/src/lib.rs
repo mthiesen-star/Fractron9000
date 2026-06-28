@@ -50,6 +50,8 @@ pub struct FractronApp {
     output_texture_id: Option<egui::TextureId>,
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
+    origin_drag_branch: Option<usize>,
+    origin_drag_offset: Option<Vec2>,
     left_panel_width: f32,
     last_flame: Flame,  // Track complete flame state to detect any parameter changes
 }
@@ -114,6 +116,8 @@ impl FractronApp {
             output_texture_id: None,
             pan_camera_start: None,
             pan_anchor_fractal: None,
+            origin_drag_branch: None,
+            origin_drag_offset: None,
             left_panel_width: 128.0,
             last_flame: flame.clone(),  // Initialize with current flame state
         }
@@ -276,8 +280,35 @@ impl FractronApp {
                 }
 
                 let (histogram_width, histogram_height) = renderer.histogram_size();
+                let origin_hovered_branch = Self::pick_hovered_origin_branch(
+                    viewport_rect,
+                    &self.flame,
+                    histogram_width,
+                    histogram_height,
+                    ui.input(|i| i.pointer.hover_pos()),
+                );
 
                 ui.input(|i| {
+                    if i.pointer.button_released(egui::PointerButton::Primary) {
+                        self.origin_drag_branch = None;
+                        self.origin_drag_offset = None;
+                    }
+
+                    if i.pointer.button_pressed(egui::PointerButton::Primary)
+                        && let Some(pos) = i.pointer.interact_pos()
+                        && let Some((branch_index, origin_fractal)) = origin_hovered_branch
+                        && let Some(pointer_fractal) = ui_to_fractal_space(
+                            viewport_rect,
+                            pos,
+                            self.flame.camera_transform,
+                            histogram_width,
+                            histogram_height,
+                        )
+                    {
+                        self.origin_drag_branch = Some(branch_index);
+                        self.origin_drag_offset = Some(origin_fractal - pointer_fractal);
+                    }
+
                     if i.pointer.button_pressed(egui::PointerButton::Middle)
                         && let Some(pos) = i.pointer.interact_pos()
                         && viewport_rect.contains(pos)
@@ -335,6 +366,30 @@ impl FractronApp {
                         self.flame.camera_transform = next_camera;
                         flame_dirty = true;
                     }
+
+                    if let (Some(branch_index), Some(origin_offset), Some(pos)) = (
+                        self.origin_drag_branch,
+                        self.origin_drag_offset,
+                        i.pointer.interact_pos(),
+                    )
+                        && let Some(pointer_fractal) = ui_to_fractal_space(
+                            viewport_rect,
+                            pos,
+                            self.flame.camera_transform,
+                            histogram_width,
+                            histogram_height,
+                        )
+                        && let Some(branch) = self.flame.branches.get_mut(branch_index)
+                    {
+                        let next_origin = pointer_fractal + origin_offset;
+                        if branch.pre_affine.z_axis.x != next_origin.x
+                            || branch.pre_affine.z_axis.y != next_origin.y
+                        {
+                            branch.pre_affine.z_axis.x = next_origin.x;
+                            branch.pre_affine.z_axis.y = next_origin.y;
+                            flame_dirty = true;
+                        }
+                    }
                 });
 
                 if flame_dirty {
@@ -359,7 +414,15 @@ impl FractronApp {
                     &mut self.output_texture_id,
                 );
 
-                Self::render_affine_triads(ui, viewport_rect, &self.flame, histogram_width, histogram_height);
+                Self::render_affine_triads(
+                    ui,
+                    viewport_rect,
+                    &self.flame,
+                    histogram_width,
+                    histogram_height,
+                    origin_hovered_branch.map(|(branch_index, _)| branch_index),
+                    self.origin_drag_branch,
+                );
             } else {
                 ui.label("GPU renderer not initialized. Check console for errors.");
                 status_right = "Renderer unavailable";
@@ -474,18 +537,49 @@ impl FractronApp {
         }
     }
 
+    fn pick_hovered_origin_branch(
+        viewport_rect: egui::Rect,
+        flame: &Flame,
+        histogram_width: u32,
+        histogram_height: u32,
+        hover_pos: Option<egui::Pos2>,
+    ) -> Option<(usize, Vec2)> {
+        let hover_pos = hover_pos?;
+
+        for (branch_index, branch) in flame.branches.iter().enumerate() {
+            let origin = branch.pre_affine.transform_point2(Vec2::ZERO);
+            let Some(origin_ui) = fractal_to_ui_space(
+                viewport_rect,
+                origin,
+                flame.camera_transform,
+                histogram_width,
+                histogram_height,
+            ) else {
+                continue;
+            };
+
+            if hover_pos.distance(origin_ui) <= TRIAD_HOVER_RADIUS {
+                return Some((branch_index, origin));
+            }
+        }
+
+        None
+    }
+
     fn render_affine_triads(
         ui: &mut egui::Ui,
         viewport_rect: egui::Rect,
         flame: &Flame,
         histogram_width: u32,
         histogram_height: u32,
+        origin_hovered_branch: Option<usize>,
+        origin_drag_branch: Option<usize>,
     ) {
         let painter = ui.painter_at(viewport_rect);
         let hover_pos = ui.input(|i| i.pointer.hover_pos());
-        let mut any_point_hovered = false;
+        let pointer_down = ui.input(|i| i.pointer.primary_down());
 
-        for branch in &flame.branches {
+        for (branch_index, branch) in flame.branches.iter().enumerate() {
             let pre = branch.pre_affine;
             let origin = pre.transform_point2(Vec2::ZERO);
             let x_point = pre.transform_point2(Vec2::X);
@@ -517,16 +611,20 @@ impl FractronApp {
                 continue;
             };
 
-            let is_origin_hovered = hover_pos.is_some_and(|pos| pos.distance(o_ui) <= TRIAD_HOVER_RADIUS);
+            let is_origin_hovered = origin_hovered_branch == Some(branch_index);
+            let is_origin_dragged = origin_drag_branch == Some(branch_index) && pointer_down;
             let is_x_hovered = hover_pos.is_some_and(|pos| pos.distance(x_ui) <= TRIAD_HOVER_RADIUS);
             let is_y_hovered = hover_pos.is_some_and(|pos| pos.distance(y_ui) <= TRIAD_HOVER_RADIUS);
-            any_point_hovered |= is_origin_hovered || is_x_hovered || is_y_hovered;
 
-            let origin_color = if is_origin_hovered { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
+            let origin_color = if is_origin_hovered || is_origin_dragged { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
             let x_color = if is_x_hovered { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
             let y_color = if is_y_hovered { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
 
-            let origin_radius = if is_origin_hovered { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
+            let origin_radius = if is_origin_hovered || is_origin_dragged {
+                TRIAD_POINT_RADIUS * 1.4
+            } else {
+                TRIAD_POINT_RADIUS
+            };
             let x_radius = if is_x_hovered { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
             let y_radius = if is_y_hovered { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
             let hover_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 30, 30));
@@ -538,7 +636,7 @@ impl FractronApp {
             painter.circle_filled(x_ui, x_radius, x_color);
             painter.circle_filled(y_ui, y_radius, y_color);
 
-            if is_origin_hovered {
+            if is_origin_hovered || is_origin_dragged {
                 painter.circle_stroke(o_ui, origin_radius, hover_stroke);
             }
             if is_x_hovered {
@@ -549,7 +647,9 @@ impl FractronApp {
             }
         }
 
-        if any_point_hovered {
+        if origin_drag_branch.is_some() && pointer_down {
+            ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grabbing);
+        } else if origin_hovered_branch.is_some() {
             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grab);
         }
     }

@@ -494,13 +494,16 @@ impl GpuRenderer {
         })
     }
 
-    /// Upload updated flame parameters to GPU storage buffer.
+    /// Upload updated flame parameters to GPU storage buffers.
     ///
-    /// This updates fields packed into the flat flame buffer, including camera transform
-    /// and tone-mapping parameters.
+    /// This refreshes the flat flame buffer plus the branch/variation buffers so edits to
+    /// branch transforms are reflected immediately in the next render pass.
     pub fn update_flame(&self, flame: &Flame) {
         let gpu_flame_flat = Self::flame_to_gpu_flat(flame, self.output_width, self.output_height);
+        let (gpu_branches, gpu_variations) = Self::flame_to_gpu_branches(flame);
         self.queue.write_buffer(&self.flame_buffer, 0, bytemuck::cast_slice(&gpu_flame_flat));
+        self.queue.write_buffer(&self.branches_buffer, 0, bytemuck::cast_slice(&gpu_branches));
+        self.queue.write_buffer(&self.variations_buffer, 0, bytemuck::cast_slice(&gpu_variations));
     }
 
     /// Clear the histogram buffer and reset render statistics.
