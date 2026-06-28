@@ -602,6 +602,10 @@ impl GpuRenderer {
         &self.output_texture_view
     }
 
+    pub fn histogram_size(&self) -> (u32, u32) {
+        (self.output_width, self.output_height)
+    }
+
     pub fn device(&self) -> &Device {
         &self.device
     }

@@ -262,66 +262,6 @@ impl FractronApp {
                 }
             }
 
-            ui.input(|i| {
-                if i.pointer.button_pressed(egui::PointerButton::Middle) 
-                    && let Some(pos) = i.pointer.interact_pos()
-                    && viewport_rect.contains(pos)
-                {
-                    let camera_start = self.flame.camera_transform;
-                    self.pan_camera_start = Some(camera_start);
-                    self.pan_anchor_fractal = ui_to_fractal_space(
-                        viewport_rect,
-                        pos,
-                        camera_start,
-                        target_width,
-                        target_height,
-                    );
-                }
-
-                if i.pointer.button_released(egui::PointerButton::Middle) {
-                    self.pan_camera_start = None;
-                    self.pan_anchor_fractal = None;
-                }
-
-                let scroll_y = i.smooth_scroll_delta.y;
-                if scroll_y.abs() > f32::EPSILON
-                    && let Some(cursor_pos) = i.pointer.hover_pos()
-                    && viewport_rect.contains(cursor_pos)
-                {
-                    let zoom_factor = (scroll_y * ZOOM_SCROLL_SENSITIVITY).exp();
-                    if let (Some(anchor_fractal), Some(target_screen)) = (
-                        ui_to_fractal_space(
-                            viewport_rect,
-                            cursor_pos,
-                            self.flame.camera_transform,
-                            target_width,
-                            target_height,
-                        ),
-                        ui_to_screen_space(viewport_rect, cursor_pos),
-                    ) {
-                        if let Some(next_camera) = solve_zoom_camera_transform(
-                            self.flame.camera_transform,
-                            anchor_fractal,
-                            target_screen,
-                            zoom_factor,
-                        ) {
-                            self.flame.camera_transform = next_camera;
-                            flame_dirty = true;
-                        }
-                    }
-                }
-
-                if let Some(next_camera) = solve_pan_camera_transform(
-                    self.pan_camera_start,
-                    self.pan_anchor_fractal,
-                    i.pointer.interact_pos(),
-                    viewport_rect,
-                ) {
-                    self.flame.camera_transform = next_camera;
-                    flame_dirty = true;
-                }
-            });
-
             if let Some(renderer) = &mut self.gpu_renderer {
                 if renderer.needs_resize(target_width, target_height) {
                     if let Err(e) = renderer.resize(target_width, target_height) {
@@ -332,6 +272,68 @@ impl FractronApp {
                     }
                     self.output_texture_id = None;
                 }
+
+                let (histogram_width, histogram_height) = renderer.histogram_size();
+
+                ui.input(|i| {
+                    if i.pointer.button_pressed(egui::PointerButton::Middle)
+                        && let Some(pos) = i.pointer.interact_pos()
+                        && viewport_rect.contains(pos)
+                    {
+                        let camera_start = self.flame.camera_transform;
+                        self.pan_camera_start = Some(camera_start);
+                        self.pan_anchor_fractal = ui_to_fractal_space(
+                            viewport_rect,
+                            pos,
+                            camera_start,
+                            histogram_width,
+                            histogram_height,
+                        );
+                    }
+
+                    if i.pointer.button_released(egui::PointerButton::Middle) {
+                        self.pan_camera_start = None;
+                        self.pan_anchor_fractal = None;
+                    }
+
+                    let scroll_y = i.smooth_scroll_delta.y;
+                    if scroll_y.abs() > f32::EPSILON
+                        && let Some(cursor_pos) = i.pointer.hover_pos()
+                        && viewport_rect.contains(cursor_pos)
+                    {
+                        let zoom_factor = (scroll_y * ZOOM_SCROLL_SENSITIVITY).exp();
+                        if let (Some(anchor_fractal), Some(target_screen)) = (
+                            ui_to_fractal_space(
+                                viewport_rect,
+                                cursor_pos,
+                                self.flame.camera_transform,
+                                histogram_width,
+                                histogram_height,
+                            ),
+                            ui_to_screen_space(viewport_rect, cursor_pos),
+                        ) {
+                            if let Some(next_camera) = solve_zoom_camera_transform(
+                                self.flame.camera_transform,
+                                anchor_fractal,
+                                target_screen,
+                                zoom_factor,
+                            ) {
+                                self.flame.camera_transform = next_camera;
+                                flame_dirty = true;
+                            }
+                        }
+                    }
+
+                    if let Some(next_camera) = solve_pan_camera_transform(
+                        self.pan_camera_start,
+                        self.pan_anchor_fractal,
+                        i.pointer.interact_pos(),
+                        viewport_rect,
+                    ) {
+                        self.flame.camera_transform = next_camera;
+                        flame_dirty = true;
+                    }
+                });
 
                 if flame_dirty {
                     renderer.update_flame(&self.flame);
@@ -355,7 +357,7 @@ impl FractronApp {
                     &mut self.output_texture_id,
                 );
 
-                Self::render_affine_triads(ui, viewport_rect, &self.flame);
+                Self::render_affine_triads(ui, viewport_rect, &self.flame, histogram_width, histogram_height);
             } else {
                 ui.label("GPU renderer not initialized. Check console for errors.");
                 status_right = "Renderer unavailable";
@@ -474,11 +476,10 @@ impl FractronApp {
         ui: &mut egui::Ui,
         viewport_rect: egui::Rect,
         flame: &Flame,
+        histogram_width: u32,
+        histogram_height: u32,
     ) {
         let painter = ui.painter_at(viewport_rect);
-        let pixels_per_point = ui.ctx().pixels_per_point();
-        let histogram_width = (viewport_rect.width() * pixels_per_point).round().max(1.0) as u32;
-        let histogram_height = (viewport_rect.height() * pixels_per_point).round().max(1.0) as u32;
 
         for branch in &flame.branches {
             let pre = branch.pre_affine;
