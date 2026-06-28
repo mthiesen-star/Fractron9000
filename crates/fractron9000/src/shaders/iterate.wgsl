@@ -342,8 +342,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         
         // Apply vps_transform: single matrix multiply maps fractal space → histogram pixel coords
         let pixel_pos = apply_affine(p, flame.vps_transform);
-        let hist_x_i = i32(pixel_pos.x);
-        let hist_y_i = i32(pixel_pos.y);
+        // Sub-pixel jitter for 2×2 temporal antialiasing: cycles through the 4 quadrant
+        // centers of each pixel over 4 frames, giving equivalent coverage to a 4-bin
+        // spatial supersampling scheme without increasing histogram buffer size.
+        let jitter_x = bitcast<f32>(render_params[5u]);
+        let jitter_y = bitcast<f32>(render_params[6u]);
+        let hist_x_i = i32(pixel_pos.x + jitter_x);
+        let hist_y_i = i32(pixel_pos.y + jitter_y);
 
         if hist_x_i >= 0 && hist_x_i < i32(hist_width) && hist_y_i >= 0 && hist_y_i < i32(hist_height) {
             let hist_x = u32(hist_x_i);

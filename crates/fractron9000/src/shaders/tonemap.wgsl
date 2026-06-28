@@ -6,7 +6,7 @@
 @group(0) @binding(1) var<storage, read> histogram: array<u32>;
 @group(0) @binding(2) var<storage, read> branch_data: array<f32>;  // Needed by branch_common, not used by tonemap
 @group(0) @binding(3) var output_texture: texture_storage_2d<rgba8unorm, write>;
-@group(0) @binding(4) var<storage, read> render_params: array<u32>;  // [0]=width, [1]=height, [2]=frame_count, [3]=total_iters_low, [4]=total_iters_high, [5]=reserved
+@group(0) @binding(4) var<storage, read> render_params: array<u32>;  // [0]=width, [1]=height, [2]=frame_count, [3]=total_iters_low, [4]=total_iters_high, [5]=jitter_x, [6]=jitter_y, [7]=reserved
 
 const TONE_C1: f32 = 0.5;
 const TONE_C2: f32 = 64.0;

@@ -9,6 +9,9 @@ use fractal_core::flame::Flame;
 const THREADS_PER_FRAME: u32 = 65536;
 const ITERATIONS_PER_THREAD: u32 = 1000;
 
+/// Set to false to disable 2×2 temporal jitter antialiasing for comparison.
+const JITTER_AA_ENABLED: bool = true;
+
 // ============================================================================
 // GPU BUFFER STRUCTURES (internal helpers only - no repr(C) needed)
 // ============================================================================
@@ -140,7 +143,7 @@ impl GpuRenderer {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
 
-        let render_params = [output_width, output_height, 0u32, 0u32, 0u32, 0u32];  // Initialized with zeros; updated each frame
+        let render_params = [output_width, output_height, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32];  // Initialized with zeros; updated each frame
         let render_params_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
             label: Some("render_params_ssbo"),
             contents: bytemuck::cast_slice(&render_params),
@@ -527,8 +530,9 @@ impl GpuRenderer {
     fn iterate(&mut self, num_threads: u32) {
         // Write render_params for the iterate shader (uses width, height, frame_count for RNG).
         // total_iters fields are not read by the iterate shader, so zero is fine here.
-        // Format: [width, height, frame_count, total_iters_low, total_iters_high, reserved]
-        let render_params_pre = [self.output_width, self.output_height, self.frame_count, 0u32, 0u32, 0u32];
+        // Format: [width, height, frame_count, total_iters_low, total_iters_high, jitter_x, jitter_y, reserved]
+        let (jitter_x, jitter_y) = Self::jitter_for_frame(self.frame_count);
+        let render_params_pre = [self.output_width, self.output_height, self.frame_count, 0u32, 0u32, jitter_x.to_bits(), jitter_y.to_bits(), 0u32];
         self.queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params_pre));
 
         // Reset dot_count_buffer to zero before iterate
@@ -565,7 +569,7 @@ impl GpuRenderer {
         // Rewrite render_params with the updated iteration_count for tonemap to read.
         let total_iters_low = (self.iteration_count & 0xFFFFFFFF) as u32;
         let total_iters_high = ((self.iteration_count >> 32) & 0xFFFFFFFF) as u32;
-        let render_params_post = [self.output_width, self.output_height, self.frame_count, total_iters_low, total_iters_high, 0u32];
+        let render_params_post = [self.output_width, self.output_height, self.frame_count, total_iters_low, total_iters_high, jitter_x.to_bits(), jitter_y.to_bits(), 0u32];
         self.queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&render_params_post));
     }
     
@@ -605,6 +609,20 @@ impl GpuRenderer {
         let target_width = target_width.clamp(32, 8192);
         let target_height = target_height.clamp(32, 8192);
         self.output_width != target_width || self.output_height != target_height
+    }
+
+    /// Returns the sub-pixel jitter offset (in histogram pixel units) for the given frame.
+    /// Cycles through the 4 quadrant centers of a pixel over 4 frames for 2×2 temporal AA.
+    fn jitter_for_frame(frame_count: u32) -> (f32, f32) {
+        if !JITTER_AA_ENABLED {
+            return (0.0, 0.0);
+        }
+        match frame_count % 4 {
+            0 => (0.25, 0.25),
+            1 => (0.75, 0.25),
+            2 => (0.25, 0.75),
+            _ => (0.75, 0.75),
+        }
     }
 
     pub fn resize(
@@ -829,7 +847,7 @@ impl GpuRenderer {
             ],
         });
 
-        let resized_render_params = [new_width, new_height, self.frame_count, 0u32, 0u32, 0u32];
+        let resized_render_params = [new_width, new_height, self.frame_count, 0u32, 0u32, 0u32, 0u32, 0u32];
         self.queue.write_buffer(&self.render_params_buffer, 0, bytemuck::cast_slice(&resized_render_params));
 
         self.histogram_buffer = histogram_buffer;
