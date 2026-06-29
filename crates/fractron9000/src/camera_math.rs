@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn alt_drag_x_rotates_both_axes_and_preserves_axis_lengths() {
+    fn x_axis_rotation_only_solver_rotates_both_axes_and_preserves_lengths() {
         let pre = Mat3::from_cols(
             Vec3::new(2.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
@@ -402,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn alt_drag_y_rotates_both_axes_and_preserves_axis_lengths() {
+    fn y_axis_rotation_only_solver_rotates_both_axes_and_preserves_lengths() {
         let pre = Mat3::from_cols(
             Vec3::new(2.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
