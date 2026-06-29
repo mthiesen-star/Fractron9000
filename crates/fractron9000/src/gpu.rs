@@ -122,19 +122,18 @@ impl GpuRenderer {
         let (gpu_branches, gpu_variations) = Self::flame_to_gpu_branches(flame);
         
         // DEBUG: Print buffer layout
-        eprintln!("\n=== BUFFER LAYOUT DIAGNOSTICS ===");
-        eprintln!("Flame buffer: {} f32s ({} bytes) - flat array packing", 
+        log::debug!("=== BUFFER LAYOUT DIAGNOSTICS ===");
+        log::debug!("Flame buffer: {} f32s ({} bytes) - flat array packing", 
                  gpu_flame_flat.len(), gpu_flame_flat.len() * 4);
-        eprintln!("  [0-3]:   camera_transform.row0");
-        eprintln!("  [4-7]:   camera_transform.row1");
-        eprintln!("  [8-11]:  params (brightness, gamma, vibrancy, padding)");
-        eprintln!("  [12-15]: background (r, g, b, a)");
-        eprintln!("  [16-17]: branch_count, reserved (as bitcast f32)");
-        eprintln!("  [18-25]: vps_transform (row0, row1) - fractal to pixel mapping");
-        eprintln!();
-        eprintln!("Branches buffer: {} f32s ({} bytes) - {} branches", 
+        log::debug!("  [0-3]:   camera_transform.row0");
+        log::debug!("  [4-7]:   camera_transform.row1");
+        log::debug!("  [8-11]:  params (brightness, gamma, vibrancy, padding)");
+        log::debug!("  [12-15]: background (r, g, b, a)");
+        log::debug!("  [16-17]: branch_count, reserved (as bitcast f32)");
+        log::debug!("  [18-25]: vps_transform (row0, row1) - fractal to pixel mapping");
+        log::debug!("Branches buffer: {} f32s ({} bytes) - {} branches", 
                  gpu_branches.len(), gpu_branches.len() * 4, gpu_branches.len() / 18);
-        eprintln!("Variations buffer: {} entries ({} bytes)", 
+        log::debug!("Variations buffer: {} entries ({} bytes)", 
                  gpu_variations.len(), gpu_variations.len() * 8);
         
         // Create buffers
@@ -648,7 +647,7 @@ impl GpuRenderer {
         // Wait for GPU to finish before recreating buffers
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
 
-        eprintln!(
+        log::info!(
             "Resizing renderer output from {}x{} to {}x{}",
             self.output_width, self.output_height, new_width, new_height
         );
@@ -933,7 +932,7 @@ impl GpuRenderer {
         let mut branch_data = Vec::new();  // Flat array of f32
         let mut gpu_variations = Vec::new();
         
-        eprintln!("Converting {} branches to GPU format (flat array)", flame.branches.len());
+        log::debug!("Converting {} branches to GPU format (flat array)", flame.branches.len());
         
         for (idx, branch) in flame.branches.iter().enumerate() {
             let var_offset = gpu_variations.len() as u32;
@@ -944,23 +943,23 @@ impl GpuRenderer {
                     var_id: var_entry.variation.id() as u32,
                     weight: var_entry.weight,
                 });
-                eprintln!("      var_id={}, weight={}", var_entry.variation.id(), var_entry.weight);
+                log::debug!("      var_id={}, weight={}", var_entry.variation.id(), var_entry.weight);
             }
             
             // LOG THE RAW MATRIX BEFORE CONVERSION
-            eprintln!("  Branch {} RAW MATRIX:", idx);
-            eprintln!("    x_axis: {:?}", branch.pre_affine.x_axis);
-            eprintln!("    y_axis: {:?}", branch.pre_affine.y_axis);
-            eprintln!("    z_axis: {:?}", branch.pre_affine.z_axis);
+            log::debug!("  Branch {} RAW MATRIX:", idx);
+            log::debug!("    x_axis: {:?}", branch.pre_affine.x_axis);
+            log::debug!("    y_axis: {:?}", branch.pre_affine.y_axis);
+            log::debug!("    z_axis: {:?}", branch.pre_affine.z_axis);
             
             let pre_affine_gpu = GpuAffine::from_mat3(branch.pre_affine);
             let post_affine_gpu = GpuAffine::from_mat3(branch.post_affine);
             
-            eprintln!("  Branch {}: chroma=[{}, {}]", idx, branch.chroma.x, branch.chroma.y);
-            eprintln!("    pre_affine row0: {:?}", pre_affine_gpu.row0);
-            eprintln!("    pre_affine row1: {:?}", pre_affine_gpu.row1);
-            eprintln!("    weight={}, color_weight={}", branch.weight, branch.color_weight);
-            eprintln!("    var_count={}, var_offset={}", var_count, var_offset);
+            log::debug!("  Branch {}: chroma=[{}, {}]", idx, branch.chroma.x, branch.chroma.y);
+            log::debug!("    pre_affine row0: {:?}", pre_affine_gpu.row0);
+            log::debug!("    pre_affine row1: {:?}", pre_affine_gpu.row1);
+            log::debug!("    weight={}, color_weight={}", branch.weight, branch.color_weight);
+            log::debug!("    var_count={}, var_offset={}", var_count, var_offset);
             
             // Pack branch into flat array: 18 f32 elements per branch
             // [0-2]: pre_affine row0 (a, b, e)
@@ -1000,7 +999,7 @@ impl GpuRenderer {
             branch_data.push(f32::from_bits(var_offset));
         }
         
-        eprintln!("  Created {} GPU branches ({} total f32s), {} total variations", 
+        log::debug!("  Created {} GPU branches ({} total f32s), {} total variations", 
                  flame.branches.len(), branch_data.len(), gpu_variations.len());
         
         (branch_data, gpu_variations)
@@ -1242,8 +1241,8 @@ mod tests {
         let flame = Flame::demo();
         let (branch_data, _gpu_variations) = GpuRenderer::flame_to_gpu_branches(&flame);
         
-        eprintln!("\n=== TEST: Using real Sierpinski flame + packing ===");
-        eprintln!("Flame has {} branches, packed to {} f32 elements", 
+        log::debug!("=== TEST: Using real Sierpinski flame + packing ===");
+        log::debug!("Flame has {} branches, packed to {} f32 elements", 
                  flame.branches.len(), branch_data.len());
 
         // Create GPU buffers
@@ -1395,7 +1394,7 @@ mod tests {
         let results: &[f32] = bytemuck::cast_slice(&data);
 
         // Verify test results
-        eprintln!("\n=== GPU SHADER TEST RESULTS ===");
+        log::debug!("=== GPU SHADER TEST RESULTS ===");
         
         // Extract expected values from the flame we packed
         let b0 = &flame.branches[0];
@@ -1407,26 +1406,26 @@ mod tests {
         let b2_pre_gpu = GpuAffine::from_mat3(b2.pre_affine);
         
         // Test 1: Branch 0 pre_affine row0 (results at indices 0, 1, 2, 3)
-        eprintln!("Test 1: Branch 0 pre_affine.row0");
-        eprintln!("  GPU read: ({}, {}, {})", results[0], results[1], results[2]);
-        eprintln!("  Expected: ({}, {}, {})", b0_pre_gpu.row0[0], b0_pre_gpu.row0[1], b0_pre_gpu.row0[2]);
+        log::debug!("Test 1: Branch 0 pre_affine.row0");
+        log::debug!("  GPU read: ({}, {}, {})", results[0], results[1], results[2]);
+        log::debug!("  Expected: ({}, {}, {})", b0_pre_gpu.row0[0], b0_pre_gpu.row0[1], b0_pre_gpu.row0[2]);
         assert!((results[0] - b0_pre_gpu.row0[0]).abs() < 0.001, "Branch 0 pre_affine.row0.x mismatch");
         assert!((results[1] - b0_pre_gpu.row0[1]).abs() < 0.001, "Branch 0 pre_affine.row0.y mismatch");
         assert!((results[2] - b0_pre_gpu.row0[2]).abs() < 0.001, "Branch 0 pre_affine.row0.z mismatch");
 
         // Test 2: Branch 0 post_affine row0 (results at indices 4, 5, 6, 7)
         let b0_post_gpu = GpuAffine::from_mat3(b0.post_affine);
-        eprintln!("Test 2: Branch 0 post_affine.row0");
-        eprintln!("  GPU read: ({}, {}, {})", results[4], results[5], results[6]);
-        eprintln!("  Expected: ({}, {}, {})", b0_post_gpu.row0[0], b0_post_gpu.row0[1], b0_post_gpu.row0[2]);
+        log::debug!("Test 2: Branch 0 post_affine.row0");
+        log::debug!("  GPU read: ({}, {}, {})", results[4], results[5], results[6]);
+        log::debug!("  Expected: ({}, {}, {})", b0_post_gpu.row0[0], b0_post_gpu.row0[1], b0_post_gpu.row0[2]);
         assert!((results[4] - b0_post_gpu.row0[0]).abs() < 0.001, "Branch 0 post_affine.row0.x mismatch");
         assert!((results[5] - b0_post_gpu.row0[1]).abs() < 0.001, "Branch 0 post_affine.row0.y mismatch");
 
         // Test 3: Branch 0 chroma and weight (results at indices 8-11)
-        eprintln!("Test 3: Branch 0 chroma and weight");
-        eprintln!("  GPU read: chroma=({}, {}), weight={}, color_weight={}", 
+        log::debug!("Test 3: Branch 0 chroma and weight");
+        log::debug!("  GPU read: chroma=({}, {}), weight={}, color_weight={}", 
                  results[8], results[9], results[10], results[11]);
-        eprintln!("  Expected: chroma=({}, {}), weight={}, color_weight={}", 
+        log::debug!("  Expected: chroma=({}, {}), weight={}, color_weight={}", 
                  b0.chroma.x, b0.chroma.y, b0.weight, b0.color_weight);
         assert!((results[8] - b0.chroma.x).abs() < 0.001, "Branch 0 chroma.x mismatch");
         assert!((results[9] - b0.chroma.y).abs() < 0.001, "Branch 0 chroma.y mismatch");
@@ -1434,43 +1433,43 @@ mod tests {
         assert!((results[11] - b0.color_weight).abs() < 0.001, "Branch 0 color_weight mismatch");
 
         // Test 4: Branch 1 translation (results at indices 12-15)
-        eprintln!("Test 4: Branch 1 pre_affine translation");
-        eprintln!("  GPU read: ({}, {}, {})", results[12], results[13], results[14]);
-        eprintln!("  Expected: ({}, {}, {})", b1_pre_gpu.row0[0], b1_pre_gpu.row0[2], b1_pre_gpu.row1[2]);
+        log::debug!("Test 4: Branch 1 pre_affine translation");
+        log::debug!("  GPU read: ({}, {}, {})", results[12], results[13], results[14]);
+        log::debug!("  Expected: ({}, {}, {})", b1_pre_gpu.row0[0], b1_pre_gpu.row0[2], b1_pre_gpu.row1[2]);
         assert!((results[12] - b1_pre_gpu.row0[0]).abs() < 0.001, "Branch 1 pre_affine.row0.x mismatch");
         assert!((results[13] - b1_pre_gpu.row0[2]).abs() < 0.001, "Branch 1 pre_affine.row0.z mismatch");
         assert!((results[14] - b1_pre_gpu.row1[2]).abs() < 0.001, "Branch 1 pre_affine.row1.z mismatch");
 
         // Test 5: Branch 2 translation (results at indices 16-19)
-        eprintln!("Test 5: Branch 2 pre_affine translation");
-        eprintln!("  GPU read: ({}, {}, {})", results[16], results[17], results[18]);
-        eprintln!("  Expected: ({}, {}, {})", b2_pre_gpu.row0[0], b2_pre_gpu.row0[2], b2_pre_gpu.row1[2]);
+        log::debug!("Test 5: Branch 2 pre_affine translation");
+        log::debug!("  GPU read: ({}, {}, {})", results[16], results[17], results[18]);
+        log::debug!("  Expected: ({}, {}, {})", b2_pre_gpu.row0[0], b2_pre_gpu.row0[2], b2_pre_gpu.row1[2]);
         assert!((results[16] - b2_pre_gpu.row0[0]).abs() < 0.001, "Branch 2 pre_affine.row0.x mismatch");
         assert!((results[17] - b2_pre_gpu.row0[2]).abs() < 0.001, "Branch 2 pre_affine.row0.z mismatch");
         assert!((results[18] - b2_pre_gpu.row1[2]).abs() < 0.001, "Branch 2 pre_affine.row1.z mismatch");
 
         // Test 6: Identity transform (results at indices 20-23)
-        eprintln!("Test 6: Identity transform (hardcoded verification)");
-        eprintln!("  GPU read: ({}, {})", results[20], results[21]);
-        eprintln!("  Expected: (2.0, 3.0)");
+        log::debug!("Test 6: Identity transform (hardcoded verification)");
+        log::debug!("  GPU read: ({}, {})", results[20], results[21]);
+        log::debug!("  Expected: (2.0, 3.0)");
         assert!((results[20] - 2.0).abs() < 0.001, "apply_affine identity should preserve x");
         assert!((results[21] - 3.0).abs() < 0.001, "apply_affine identity should preserve y");
 
         // Test 7: Translation transform (results at indices 24-27)
-        eprintln!("Test 7: Translation transform (hardcoded verification)");
-        eprintln!("  GPU read: ({}, {})", results[24], results[25]);
-        eprintln!("  Expected: (6.0, -1.0)");
+        log::debug!("Test 7: Translation transform (hardcoded verification)");
+        log::debug!("  GPU read: ({}, {})", results[24], results[25]);
+        log::debug!("  Expected: (6.0, -1.0)");
         assert!((results[24] - 6.0).abs() < 0.001, "apply_affine translate should give correct x");
         assert!((results[25] - (-1.0)).abs() < 0.001, "apply_affine translate should give correct y");
 
         // Test 8: Scale transform (results at indices 28-31)
-        eprintln!("Test 8: Scale transform (hardcoded verification)");
-        eprintln!("  GPU read: ({}, {})", results[28], results[29]);
-        eprintln!("  Expected: (2.0, 3.0)");
+        log::debug!("Test 8: Scale transform (hardcoded verification)");
+        log::debug!("  GPU read: ({}, {})", results[28], results[29]);
+        log::debug!("  Expected: (2.0, 3.0)");
         assert!((results[28] - 2.0).abs() < 0.001, "apply_affine scale should give correct x");
         assert!((results[29] - 3.0).abs() < 0.001, "apply_affine scale should give correct y");
 
-        eprintln!("\n✓ All GPU tests passed!");
-        eprintln!("  Data pipeline: Flame::demo() → GpuRenderer::flame_to_gpu_branches() → GPU shader ✓");
+        log::debug!("All GPU tests passed");
+        log::debug!("Data pipeline: Flame::demo() -> GpuRenderer::flame_to_gpu_branches() -> GPU shader");
     }
 }

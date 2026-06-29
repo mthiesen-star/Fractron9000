@@ -2,6 +2,12 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
+    let _ = env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info"),
+    )
+    .format_timestamp_millis()
+    .try_init();
+
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
     let mut load_flame_file: Option<String> = None;

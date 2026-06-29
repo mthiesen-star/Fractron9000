@@ -73,11 +73,11 @@ impl FractronApp {
         let flame = if let (Some(file_path), Some(name)) = (load_flame_file, load_flame_name) {
             match load_flame_from_file(&file_path, &name) {
                 Ok(flame) => {
-                    println!("Successfully loaded flame '{}' from {}", name, file_path);
+                    log::info!("Successfully loaded flame '{}' from {}", name, file_path);
                     flame
                 }
                 Err(e) => {
-                    eprintln!("Failed to load flame: {}", e);
+                    log::warn!("Failed to load flame: {}", e);
                     Flame::demo()
                 }
             }
@@ -88,9 +88,9 @@ impl FractronApp {
         log::info!("FractronApp::new: wgpu_render_state available = {}", cc.wgpu_render_state.is_some());
         
         // Debug: log flame structure
-        eprintln!("Flame created: name={}, branches={}", flame.name, flame.branches.len());
+        log::debug!("Flame created: name={}, branches={}", flame.name, flame.branches.len());
         for (i, branch) in flame.branches.iter().enumerate() {
-            eprintln!("  Branch {}: weight={}, pre_affine translation=({}, {})", 
+            log::debug!("  Branch {}: weight={}, pre_affine translation=({}, {})", 
                 i, 
                 branch.weight,
                 branch.pre_affine.z_axis.x,
@@ -250,7 +250,7 @@ impl FractronApp {
                 let renderer = self.gpu_renderer.as_mut().expect("renderer checked above");
                 if renderer.needs_resize(target_width, target_height) {
                     if let Err(e) = renderer.resize(target_width, target_height) {
-                        eprintln!("Failed to resize renderer output: {}", e);
+                        log::error!("Failed to resize renderer output: {}", e);
                         ui.label("Resize failed. See console for details.");
                         status_right = "Resize error";
                         return;
@@ -574,7 +574,7 @@ impl FractronApp {
             .unwrap_or_else(|| "none".to_string());
 
         let frame_count = self.gpu_renderer.as_ref().map(|r| r.frame_count()).unwrap_or(0);
-        println!(
+        log::info!(
             "STATE_DUMP frame_count={} pointer={} pan_camera_start={} pan_anchor_fractal={} camera=[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}] camera_scale=[{:.6},{:.6}] viewport=[{:.1},{:.1},{:.1},{:.1}] viewport_aspect={:.6} target={}x{}",
             frame_count,
             pointer,
