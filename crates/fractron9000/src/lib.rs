@@ -1,6 +1,5 @@
 mod gpu;
 mod camera_math;
-// Force rebuild marker 7
 
 use gpu::GpuRenderer;
 use fractal_core::flame::Flame;
@@ -240,14 +239,11 @@ impl FractronApp {
                 }
             }
 
-            if self.gpu_renderer.is_none() {
-                ui.label("GPU renderer not initialized. Check console for errors.");
-                status_right = "Renderer unavailable";
-                return;
-            }
-
             {
-                let renderer = self.gpu_renderer.as_mut().expect("renderer checked above");
+                let Some(renderer) = self.gpu_renderer.as_mut() else {
+                    Self::report_renderer_unavailable(ui, &mut status_right);
+                    return;
+                };
                 if renderer.needs_resize(target_width, target_height) {
                     if let Err(e) = renderer.resize(target_width, target_height) {
                         log::error!("Failed to resize renderer output: {}", e);
@@ -259,11 +255,11 @@ impl FractronApp {
                 }
             }
 
-            let (histogram_width, histogram_height) = self
-                .gpu_renderer
-                .as_ref()
-                .expect("renderer checked above")
-                .histogram_size();
+            let Some(renderer) = self.gpu_renderer.as_ref() else {
+                Self::report_renderer_unavailable(ui, &mut status_right);
+                return;
+            };
+            let (histogram_width, histogram_height) = renderer.histogram_size();
 
             let hovered_triad_handle = Self::pick_hovered_triad_handle(
                 viewport_rect,
@@ -289,7 +285,10 @@ impl FractronApp {
                 self.last_flame = self.flame.clone();
             }
 
-            let renderer = self.gpu_renderer.as_mut().expect("renderer checked above");
+            let Some(renderer) = self.gpu_renderer.as_mut() else {
+                Self::report_renderer_unavailable(ui, &mut status_right);
+                return;
+            };
             if flame_dirty {
                 renderer.update_flame(&self.flame);
             }
@@ -315,6 +314,11 @@ impl FractronApp {
         });
 
         status_right
+    }
+
+    fn report_renderer_unavailable(ui: &mut egui::Ui, status_right: &mut &'static str) {
+        ui.label("GPU renderer not initialized. Check console for errors.");
+        *status_right = "Renderer unavailable";
     }
 
     fn handle_debug_dump_shortcut(
