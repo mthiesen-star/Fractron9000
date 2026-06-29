@@ -221,47 +221,12 @@ impl FractronApp {
         let target_width = (viewport_rect.width() * pixels_per_point).round().max(1.0) as u32;
         let target_height = (viewport_rect.height() * pixels_per_point).round().max(1.0) as u32;
 
-        let dump_state_requested = ui.input(|i| {
-            i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::S)
-        });
-        if dump_state_requested {
-            let pointer_pos = ui.input(|i| i.pointer.interact_pos());
-            self.dump_debug_state(viewport_rect, target_width, target_height, pointer_pos);
-        }
+        self.handle_debug_dump_shortcut(ui, viewport_rect, target_width, target_height);
 
         let mut status_right = "Ready";
 
-        ui.scope_builder(egui::UiBuilder::new().max_rect(left_panel_rect), |ui| {
-            let frame = egui::Frame::new()
-                .fill(egui::Color32::from_rgb(18, 20, 25))
-                .inner_margin(egui::Margin::symmetric(8, 8))
-                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 48, 56)));
-
-            frame.show(ui, |ui| {
-                ui.label(egui::RichText::new("Palette + Parameters").color(egui::Color32::from_gray(200)));
-                ui.add_space(4.0);
-                ui.label(egui::RichText::new("(placeholder)").color(egui::Color32::from_gray(140)));
-            });
-        });
-
-        ui.scope_builder(egui::UiBuilder::new().max_rect(splitter_rect), |ui| {
-            let stroke_color = if splitter_response.dragged() || splitter_response.hovered() {
-                egui::Color32::from_rgb(110, 120, 140)
-            } else {
-                egui::Color32::from_rgb(58, 62, 72)
-            };
-            let center_x = splitter_rect.center().x;
-            ui.painter().line_segment(
-                [
-                    egui::pos2(center_x, splitter_rect.top()),
-                    egui::pos2(center_x, splitter_rect.bottom()),
-                ],
-                egui::Stroke::new(2.0, stroke_color),
-            );
-            if splitter_response.hovered() || splitter_response.dragged() {
-                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeHorizontal);
-            }
-        });
+        Self::render_left_panel(ui, left_panel_rect);
+        Self::render_splitter(ui, splitter_rect, splitter_response.hovered(), splitter_response.dragged());
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(viewport_rect), |ui| {
             let mut flame_dirty = false;
@@ -275,7 +240,14 @@ impl FractronApp {
                 }
             }
 
-            if let Some(renderer) = &mut self.gpu_renderer {
+            if self.gpu_renderer.is_none() {
+                ui.label("GPU renderer not initialized. Check console for errors.");
+                status_right = "Renderer unavailable";
+                return;
+            }
+
+            {
+                let renderer = self.gpu_renderer.as_mut().expect("renderer checked above");
                 if renderer.needs_resize(target_width, target_height) {
                     if let Err(e) = renderer.resize(target_width, target_height) {
                         eprintln!("Failed to resize renderer output: {}", e);
@@ -285,168 +257,292 @@ impl FractronApp {
                     }
                     self.output_texture_id = None;
                 }
-
-                let (histogram_width, histogram_height) = renderer.histogram_size();
-                let hovered_triad_handle = Self::pick_hovered_triad_handle(
-                    viewport_rect,
-                    &self.flame,
-                    histogram_width,
-                    histogram_height,
-                    ui.input(|i| i.pointer.hover_pos()),
-                );
-
-                ui.input(|i| {
-                    if i.pointer.button_released(egui::PointerButton::Primary) {
-                        self.triad_drag_branch = None;
-                        self.triad_drag_handle = None;
-                        if self.pan_anchor_fractal.is_none() {
-                            self.drag_start_state = None;
-                        }
-                    }
-
-                    if i.pointer.button_pressed(egui::PointerButton::Primary)
-                        && let Some((branch_index, handle)) = hovered_triad_handle
-                    {
-                        self.triad_drag_branch = Some(branch_index);
-                        self.triad_drag_handle = Some(handle);
-                        self.drag_start_state = Some(self.flame.clone());
-                    }
-
-                    if i.pointer.button_pressed(egui::PointerButton::Middle)
-                        && let Some(pos) = i.pointer.interact_pos()
-                        && viewport_rect.contains(pos)
-                    {
-                        self.drag_start_state = Some(self.flame.clone());
-                        self.pan_anchor_fractal = ui_to_fractal_space(
-                            viewport_rect,
-                            pos,
-                            self.flame.camera_transform,
-                            histogram_width,
-                            histogram_height,
-                        );
-                    }
-
-                    if i.pointer.button_released(egui::PointerButton::Middle) {
-                        self.pan_anchor_fractal = None;
-                        if self.triad_drag_branch.is_none() {
-                            self.drag_start_state = None;
-                        }
-                    }
-
-                    let scroll_y = i.smooth_scroll_delta.y;
-                    if scroll_y.abs() > f32::EPSILON
-                        && let Some(cursor_pos) = i.pointer.hover_pos()
-                        && viewport_rect.contains(cursor_pos)
-                    {
-                        let zoom_factor = (scroll_y * ZOOM_SCROLL_SENSITIVITY).exp();
-                        if let (Some(anchor_fractal), Some(target_screen)) = (
-                            ui_to_fractal_space(
-                                viewport_rect,
-                                cursor_pos,
-                                self.flame.camera_transform,
-                                histogram_width,
-                                histogram_height,
-                            ),
-                            ui_to_screen_space(viewport_rect, cursor_pos),
-                        ) {
-                            if let Some(next_camera) = solve_zoom_camera_transform(
-                                self.flame.camera_transform,
-                                anchor_fractal,
-                                target_screen,
-                                zoom_factor,
-                            ) {
-                                self.flame.camera_transform = next_camera;
-                                flame_dirty = true;
-                            }
-                        }
-                    }
-
-                    if let Some(next_camera) = solve_pan_camera_transform(
-                        self.drag_start_state.as_ref().map(|s| s.camera_transform),
-                        self.pan_anchor_fractal,
-                        i.pointer.interact_pos(),
-                        viewport_rect,
-                    ) {
-                        self.flame.camera_transform = next_camera;
-                        flame_dirty = true;
-                    }
-
-                    if let (Some(branch_index), Some(handle), Some(pos)) = (
-                        self.triad_drag_branch,
-                        self.triad_drag_handle,
-                        i.pointer.interact_pos(),
-                    )
-                        && let Some(pre_affine_start) = self
-                            .drag_start_state
-                            .as_ref()
-                            .and_then(|s| s.branches.get(branch_index))
-                            .map(|b| b.pre_affine)
-                        && let Some(pointer_fractal) = ui_to_fractal_space(
-                            viewport_rect,
-                            pos,
-                            self.flame.camera_transform,
-                            histogram_width,
-                            histogram_height,
-                        )
-                        && let Some(branch) = self.flame.branches.get_mut(branch_index)
-                    {
-                        let next_pre_affine = match handle {
-                            TriadHandle::Origin => {
-                                solve_pre_affine_origin_translation(pre_affine_start, pointer_fractal)
-                            }
-                            TriadHandle::XAxis => {
-                                solve_pre_affine_x_axis_endpoint(pre_affine_start, pointer_fractal)
-                            }
-                            TriadHandle::YAxis => {
-                                solve_pre_affine_y_axis_endpoint(pre_affine_start, pointer_fractal)
-                            }
-                        };
-                        if branch.pre_affine != next_pre_affine {
-                            branch.pre_affine = next_pre_affine;
-                            flame_dirty = true;
-                        }
-                    }
-                });
-
-                if flame_dirty {
-                    renderer.update_flame(&self.flame);
-                }
-
-                // Detect if any flame parameters have changed to clear histogram
-                let flame_changed = self.flame != self.last_flame;
-                let should_clear_histogram = flame_dirty || flame_changed;
-                
-                // Update last_flame for next frame comparison
-                if flame_changed {
-                    self.last_flame = self.flame.clone();
-                }
-
-                renderer.advance_frame(should_clear_histogram);
-                status_right = Self::present_output_texture(
-                    ui,
-                    renderer,
-                    viewport_rect.size(),
-                    _frame,
-                    &mut self.output_texture_id,
-                );
-
-                Self::render_affine_triads(
-                    ui,
-                    viewport_rect,
-                    &self.flame,
-                    histogram_width,
-                    histogram_height,
-                    hovered_triad_handle,
-                    self.triad_drag_branch,
-                    self.triad_drag_handle,
-                );
-            } else {
-                ui.label("GPU renderer not initialized. Check console for errors.");
-                status_right = "Renderer unavailable";
             }
+
+            let (histogram_width, histogram_height) = self
+                .gpu_renderer
+                .as_ref()
+                .expect("renderer checked above")
+                .histogram_size();
+
+            let hovered_triad_handle = Self::pick_hovered_triad_handle(
+                viewport_rect,
+                &self.flame,
+                histogram_width,
+                histogram_height,
+                ui.input(|i| i.pointer.hover_pos()),
+            );
+
+            if self.handle_viewport_input(
+                ui,
+                viewport_rect,
+                histogram_width,
+                histogram_height,
+                hovered_triad_handle,
+            ) {
+                flame_dirty = true;
+            }
+
+            let flame_changed = self.flame != self.last_flame;
+            let should_clear_histogram = flame_dirty || flame_changed;
+            if flame_changed {
+                self.last_flame = self.flame.clone();
+            }
+
+            let renderer = self.gpu_renderer.as_mut().expect("renderer checked above");
+            if flame_dirty {
+                renderer.update_flame(&self.flame);
+            }
+            renderer.advance_frame(should_clear_histogram);
+            status_right = Self::present_output_texture(
+                ui,
+                renderer,
+                viewport_rect.size(),
+                _frame,
+                &mut self.output_texture_id,
+            );
+
+            Self::render_affine_triads(
+                ui,
+                viewport_rect,
+                &self.flame,
+                histogram_width,
+                histogram_height,
+                hovered_triad_handle,
+                self.triad_drag_branch,
+                self.triad_drag_handle,
+            );
         });
 
         status_right
+    }
+
+    fn handle_debug_dump_shortcut(
+        &self,
+        ui: &egui::Ui,
+        viewport_rect: egui::Rect,
+        target_width: u32,
+        target_height: u32,
+    ) {
+        let dump_state_requested = ui.input(|i| {
+            i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(egui::Key::S)
+        });
+        if dump_state_requested {
+            let pointer_pos = ui.input(|i| i.pointer.interact_pos());
+            self.dump_debug_state(viewport_rect, target_width, target_height, pointer_pos);
+        }
+    }
+
+    fn render_left_panel(ui: &mut egui::Ui, left_panel_rect: egui::Rect) {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(left_panel_rect), |ui| {
+            let frame = egui::Frame::new()
+                .fill(egui::Color32::from_rgb(18, 20, 25))
+                .inner_margin(egui::Margin::symmetric(8, 8))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 48, 56)));
+
+            frame.show(ui, |ui| {
+                ui.label(egui::RichText::new("Palette + Parameters").color(egui::Color32::from_gray(200)));
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new("(placeholder)").color(egui::Color32::from_gray(140)));
+            });
+        });
+    }
+
+    fn render_splitter(
+        ui: &mut egui::Ui,
+        splitter_rect: egui::Rect,
+        splitter_hovered: bool,
+        splitter_dragged: bool,
+    ) {
+        ui.scope_builder(egui::UiBuilder::new().max_rect(splitter_rect), |ui| {
+            let stroke_color = if splitter_dragged || splitter_hovered {
+                egui::Color32::from_rgb(110, 120, 140)
+            } else {
+                egui::Color32::from_rgb(58, 62, 72)
+            };
+            let center_x = splitter_rect.center().x;
+            ui.painter().line_segment(
+                [
+                    egui::pos2(center_x, splitter_rect.top()),
+                    egui::pos2(center_x, splitter_rect.bottom()),
+                ],
+                egui::Stroke::new(2.0, stroke_color),
+            );
+            if splitter_hovered || splitter_dragged {
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeHorizontal);
+            }
+        });
+    }
+
+    fn handle_viewport_input(
+        &mut self,
+        ui: &egui::Ui,
+        viewport_rect: egui::Rect,
+        histogram_width: u32,
+        histogram_height: u32,
+        hovered_triad_handle: Option<(usize, TriadHandle)>,
+    ) -> bool {
+        let mut flame_dirty = false;
+
+        ui.input(|i| {
+            self.process_pointer_button_transitions(
+                i,
+                viewport_rect,
+                histogram_width,
+                histogram_height,
+                hovered_triad_handle,
+            );
+
+            flame_dirty |= self.process_zoom_and_pan(i, viewport_rect, histogram_width, histogram_height);
+            flame_dirty |=
+                self.process_triad_drag_update(i, viewport_rect, histogram_width, histogram_height);
+        });
+
+        flame_dirty
+    }
+
+    fn process_pointer_button_transitions(
+        &mut self,
+        i: &egui::InputState,
+        viewport_rect: egui::Rect,
+        histogram_width: u32,
+        histogram_height: u32,
+        hovered_triad_handle: Option<(usize, TriadHandle)>,
+    ) {
+        if i.pointer.button_released(egui::PointerButton::Primary) {
+            self.triad_drag_branch = None;
+            self.triad_drag_handle = None;
+            if self.pan_anchor_fractal.is_none() {
+                self.drag_start_state = None;
+            }
+        }
+
+        if i.pointer.button_pressed(egui::PointerButton::Primary)
+            && let Some((branch_index, handle)) = hovered_triad_handle
+        {
+            self.triad_drag_branch = Some(branch_index);
+            self.triad_drag_handle = Some(handle);
+            self.drag_start_state = Some(self.flame.clone());
+        }
+
+        if i.pointer.button_pressed(egui::PointerButton::Middle)
+            && let Some(pos) = i.pointer.interact_pos()
+            && viewport_rect.contains(pos)
+        {
+            self.drag_start_state = Some(self.flame.clone());
+            self.pan_anchor_fractal = ui_to_fractal_space(
+                viewport_rect,
+                pos,
+                self.flame.camera_transform,
+                histogram_width,
+                histogram_height,
+            );
+        }
+
+        if i.pointer.button_released(egui::PointerButton::Middle) {
+            self.pan_anchor_fractal = None;
+            if self.triad_drag_branch.is_none() {
+                self.drag_start_state = None;
+            }
+        }
+    }
+
+    fn process_zoom_and_pan(
+        &mut self,
+        i: &egui::InputState,
+        viewport_rect: egui::Rect,
+        histogram_width: u32,
+        histogram_height: u32,
+    ) -> bool {
+        let mut flame_dirty = false;
+
+        let scroll_y = i.smooth_scroll_delta.y;
+        if scroll_y.abs() > f32::EPSILON
+            && let Some(cursor_pos) = i.pointer.hover_pos()
+            && viewport_rect.contains(cursor_pos)
+        {
+            let zoom_factor = (scroll_y * ZOOM_SCROLL_SENSITIVITY).exp();
+            if let (Some(anchor_fractal), Some(target_screen)) = (
+                ui_to_fractal_space(
+                    viewport_rect,
+                    cursor_pos,
+                    self.flame.camera_transform,
+                    histogram_width,
+                    histogram_height,
+                ),
+                ui_to_screen_space(viewport_rect, cursor_pos),
+            ) {
+                if let Some(next_camera) = solve_zoom_camera_transform(
+                    self.flame.camera_transform,
+                    anchor_fractal,
+                    target_screen,
+                    zoom_factor,
+                ) {
+                    self.flame.camera_transform = next_camera;
+                    flame_dirty = true;
+                }
+            }
+        }
+
+        if let Some(next_camera) = solve_pan_camera_transform(
+            self.drag_start_state.as_ref().map(|s| s.camera_transform),
+            self.pan_anchor_fractal,
+            i.pointer.interact_pos(),
+            viewport_rect,
+        ) {
+            self.flame.camera_transform = next_camera;
+            flame_dirty = true;
+        }
+
+        flame_dirty
+    }
+
+    fn process_triad_drag_update(
+        &mut self,
+        i: &egui::InputState,
+        viewport_rect: egui::Rect,
+        histogram_width: u32,
+        histogram_height: u32,
+    ) -> bool {
+        let mut flame_dirty = false;
+
+        if let (Some(branch_index), Some(handle), Some(pos)) = (
+            self.triad_drag_branch,
+            self.triad_drag_handle,
+            i.pointer.interact_pos(),
+        )
+            && let Some(pre_affine_start) = self
+                .drag_start_state
+                .as_ref()
+                .and_then(|s| s.branches.get(branch_index))
+                .map(|b| b.pre_affine)
+            && let Some(pointer_fractal) = ui_to_fractal_space(
+                viewport_rect,
+                pos,
+                self.flame.camera_transform,
+                histogram_width,
+                histogram_height,
+            )
+            && let Some(branch) = self.flame.branches.get_mut(branch_index)
+        {
+            let next_pre_affine = match handle {
+                TriadHandle::Origin => {
+                    solve_pre_affine_origin_translation(pre_affine_start, pointer_fractal)
+                }
+                TriadHandle::XAxis => {
+                    solve_pre_affine_x_axis_endpoint(pre_affine_start, pointer_fractal)
+                }
+                TriadHandle::YAxis => {
+                    solve_pre_affine_y_axis_endpoint(pre_affine_start, pointer_fractal)
+                }
+            };
+            if branch.pre_affine != next_pre_affine {
+                branch.pre_affine = next_pre_affine;
+                flame_dirty = true;
+            }
+        }
+
+        flame_dirty
     }
 
     fn dump_debug_state(
