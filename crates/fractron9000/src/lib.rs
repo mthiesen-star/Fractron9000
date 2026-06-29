@@ -529,29 +529,40 @@ impl FractronApp {
             )
             && let Some(branch) = self.flame.branches.get_mut(branch_index)
         {
-            let preserve_axis_orientation = i.modifiers.shift;
+            let rotation_only = i.modifiers.shift;
+            let fixed_angle_no_skew = i.modifiers.alt;
             let next_pre_affine = match handle {
                 TriadHandle::Origin => {
                     solve_pre_affine_origin_translation(pre_affine_start, pointer_fractal)
                 }
                 TriadHandle::XAxis => {
-                    if preserve_axis_orientation {
-                        solve_pre_affine_x_axis_endpoint_preserve_orientation(
+                    if rotation_only {
+                        solve_pre_affine_x_axis_rotate_only(
                             pre_affine_start,
                             pointer_fractal,
                         )
-                    } else {
+                    } else if fixed_angle_no_skew {
                         solve_pre_affine_x_axis_endpoint(pre_affine_start, pointer_fractal)
+                    } else {
+                        solve_pre_affine_x_axis_rotate_scale_only(
+                            pre_affine_start,
+                            pointer_fractal,
+                        )
                     }
                 }
                 TriadHandle::YAxis => {
-                    if preserve_axis_orientation {
-                        solve_pre_affine_y_axis_endpoint_preserve_orientation(
+                    if rotation_only {
+                        solve_pre_affine_y_axis_rotate_only(
                             pre_affine_start,
                             pointer_fractal,
                         )
-                    } else {
+                    } else if fixed_angle_no_skew {
                         solve_pre_affine_y_axis_endpoint(pre_affine_start, pointer_fractal)
+                    } else {
+                        solve_pre_affine_y_axis_rotate_scale_only(
+                            pre_affine_start,
+                            pointer_fractal,
+                        )
                     }
                 }
             };

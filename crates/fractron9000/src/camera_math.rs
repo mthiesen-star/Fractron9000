@@ -138,7 +138,7 @@ fn rotated_axes_from_dragged_axis(
     Some((rotate(dragged_axis_start), rotate(other_axis_start)))
 }
 
-pub fn solve_pre_affine_x_axis_endpoint_preserve_orientation(
+pub fn solve_pre_affine_x_axis_rotate_only(
     pre_affine_start: Mat3,
     target_x_endpoint: Vec2,
 ) -> Mat3 {
@@ -161,7 +161,7 @@ pub fn solve_pre_affine_x_axis_endpoint_preserve_orientation(
     next_pre_affine
 }
 
-pub fn solve_pre_affine_y_axis_endpoint_preserve_orientation(
+pub fn solve_pre_affine_y_axis_rotate_only(
     pre_affine_start: Mat3,
     target_y_endpoint: Vec2,
 ) -> Mat3 {
@@ -177,6 +177,68 @@ pub fn solve_pre_affine_y_axis_endpoint_preserve_orientation(
     };
 
     let mut next_pre_affine = pre_affine_start;
+    next_pre_affine.x_axis.x = next_x_axis.x;
+    next_pre_affine.x_axis.y = next_x_axis.y;
+    next_pre_affine.y_axis.x = next_y_axis.x;
+    next_pre_affine.y_axis.y = next_y_axis.y;
+    next_pre_affine
+}
+
+pub fn solve_pre_affine_x_axis_rotate_scale_only(
+    pre_affine_start: Mat3,
+    target_x_endpoint: Vec2,
+) -> Mat3 {
+    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
+    let x_axis_start = Vec2::new(pre_affine_start.x_axis.x, pre_affine_start.x_axis.y);
+    let y_axis_start = Vec2::new(pre_affine_start.y_axis.x, pre_affine_start.y_axis.y);
+    let target_x_axis = target_x_endpoint - origin;
+
+    let Some((next_x_axis_rotated, next_y_axis_rotated)) =
+        rotated_axes_from_dragged_axis(x_axis_start, y_axis_start, target_x_axis)
+    else {
+        return pre_affine_start;
+    };
+
+    let start_len = x_axis_start.length();
+    if start_len <= 1e-8 {
+        return pre_affine_start;
+    }
+    let shared_scale = target_x_axis.length() / start_len;
+
+    let mut next_pre_affine = pre_affine_start;
+    let next_x_axis = next_x_axis_rotated * shared_scale;
+    let next_y_axis = next_y_axis_rotated * shared_scale;
+    next_pre_affine.x_axis.x = next_x_axis.x;
+    next_pre_affine.x_axis.y = next_x_axis.y;
+    next_pre_affine.y_axis.x = next_y_axis.x;
+    next_pre_affine.y_axis.y = next_y_axis.y;
+    next_pre_affine
+}
+
+pub fn solve_pre_affine_y_axis_rotate_scale_only(
+    pre_affine_start: Mat3,
+    target_y_endpoint: Vec2,
+) -> Mat3 {
+    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
+    let x_axis_start = Vec2::new(pre_affine_start.x_axis.x, pre_affine_start.x_axis.y);
+    let y_axis_start = Vec2::new(pre_affine_start.y_axis.x, pre_affine_start.y_axis.y);
+    let target_y_axis = target_y_endpoint - origin;
+
+    let Some((next_y_axis_rotated, next_x_axis_rotated)) =
+        rotated_axes_from_dragged_axis(y_axis_start, x_axis_start, target_y_axis)
+    else {
+        return pre_affine_start;
+    };
+
+    let start_len = y_axis_start.length();
+    if start_len <= 1e-8 {
+        return pre_affine_start;
+    }
+    let shared_scale = target_y_axis.length() / start_len;
+
+    let mut next_pre_affine = pre_affine_start;
+    let next_y_axis = next_y_axis_rotated * shared_scale;
+    let next_x_axis = next_x_axis_rotated * shared_scale;
     next_pre_affine.x_axis.x = next_x_axis.x;
     next_pre_affine.x_axis.y = next_x_axis.y;
     next_pre_affine.y_axis.x = next_y_axis.x;
@@ -264,6 +326,17 @@ pub fn solve_aspect_camera_transform(camera_start: Mat3, viewport_aspect: f32) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn unsigned_angle(v1: Vec2, v2: Vec2) -> Option<f32> {
+        let len1 = v1.length();
+        let len2 = v2.length();
+        if len1 <= 1e-8 || len2 <= 1e-8 {
+            return None;
+        }
+
+        let cosine = (v1.dot(v2) / (len1 * len2)).clamp(-1.0, 1.0);
+        Some(cosine.acos())
+    }
 
     #[test]
     fn round_trip_fractal_ui_fractal_preserves_point() {
@@ -382,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn x_axis_rotation_only_solver_rotates_both_axes_and_preserves_lengths() {
+    fn x_axis_rotate_only_solver_rotates_both_axes_and_preserves_lengths() {
         let pre = Mat3::from_cols(
             Vec3::new(2.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
@@ -390,7 +463,7 @@ mod tests {
         );
         let target_x_endpoint = Vec2::new(0.0, 10.0);
 
-        let next = solve_pre_affine_x_axis_endpoint_preserve_orientation(pre, target_x_endpoint);
+        let next = solve_pre_affine_x_axis_rotate_only(pre, target_x_endpoint);
         let next_x = Vec2::new(next.x_axis.x, next.x_axis.y);
         let next_y = Vec2::new(next.y_axis.x, next.y_axis.y);
 
@@ -402,7 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn y_axis_rotation_only_solver_rotates_both_axes_and_preserves_lengths() {
+    fn y_axis_rotate_only_solver_rotates_both_axes_and_preserves_lengths() {
         let pre = Mat3::from_cols(
             Vec3::new(2.0, 0.0, 0.0),
             Vec3::new(0.0, 1.0, 0.0),
@@ -410,7 +483,7 @@ mod tests {
         );
         let target_y_endpoint = Vec2::new(10.0, 0.0);
 
-        let next = solve_pre_affine_y_axis_endpoint_preserve_orientation(pre, target_y_endpoint);
+        let next = solve_pre_affine_y_axis_rotate_only(pre, target_y_endpoint);
         let next_x = Vec2::new(next.x_axis.x, next.x_axis.y);
         let next_y = Vec2::new(next.y_axis.x, next.y_axis.y);
 
@@ -419,5 +492,59 @@ mod tests {
         assert!((next_x.y + 2.0).abs() <= eps);
         assert!((next_y.x - 1.0).abs() <= eps);
         assert!((next_y.y - 0.0).abs() <= eps);
+    }
+
+    #[test]
+    fn x_axis_rotate_scale_only_solver_keeps_angle_and_scales_axes_together() {
+        let pre = Mat3::from_cols(
+            Vec3::new(2.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+        let target_x_endpoint = Vec2::new(2.0, 2.0);
+
+        let next = solve_pre_affine_x_axis_rotate_scale_only(pre, target_x_endpoint);
+        let start_x = Vec2::new(pre.x_axis.x, pre.x_axis.y);
+        let start_y = Vec2::new(pre.y_axis.x, pre.y_axis.y);
+        let next_x = Vec2::new(next.x_axis.x, next.x_axis.y);
+        let next_y = Vec2::new(next.y_axis.x, next.y_axis.y);
+
+        let start_angle = unsigned_angle(start_x, start_y).expect("start angle should be valid");
+        let next_angle = unsigned_angle(next_x, next_y).expect("next angle should be valid");
+
+        let eps = 1e-5;
+        assert!((next_x.x - target_x_endpoint.x).abs() <= eps);
+        assert!((next_x.y - target_x_endpoint.y).abs() <= eps);
+        assert!((start_angle - next_angle).abs() <= eps);
+        assert!((next_x.length() - start_x.length()).abs() > 1e-4);
+        let shared_scale = next_x.length() / start_x.length();
+        assert!((next_y.length() - start_y.length() * shared_scale).abs() <= eps);
+    }
+
+    #[test]
+    fn y_axis_rotate_scale_only_solver_keeps_angle_and_scales_axes_together() {
+        let pre = Mat3::from_cols(
+            Vec3::new(2.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+        let target_y_endpoint = Vec2::new(2.0, 2.0);
+
+        let next = solve_pre_affine_y_axis_rotate_scale_only(pre, target_y_endpoint);
+        let start_x = Vec2::new(pre.x_axis.x, pre.x_axis.y);
+        let start_y = Vec2::new(pre.y_axis.x, pre.y_axis.y);
+        let next_x = Vec2::new(next.x_axis.x, next.x_axis.y);
+        let next_y = Vec2::new(next.y_axis.x, next.y_axis.y);
+
+        let start_angle = unsigned_angle(start_x, start_y).expect("start angle should be valid");
+        let next_angle = unsigned_angle(next_x, next_y).expect("next angle should be valid");
+
+        let eps = 1e-5;
+        assert!((next_y.x - target_y_endpoint.x).abs() <= eps);
+        assert!((next_y.y - target_y_endpoint.y).abs() <= eps);
+        assert!((start_angle - next_angle).abs() <= eps);
+        assert!((next_y.length() - start_y.length()).abs() > 1e-4);
+        let shared_scale = next_y.length() / start_y.length();
+        assert!((next_x.length() - start_x.length() * shared_scale).abs() <= eps);
     }
 }
