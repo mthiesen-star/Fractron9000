@@ -849,6 +849,7 @@ impl FractronApp {
     ) {
         let frame_count = self.gpu_renderer.as_ref().map(|r| r.frame_count()).unwrap_or(0);
         let status_left = format!("Frame Count: {}", frame_count);
+        let drag_constraint_hint = self.active_triad_axis_constraint_hint(ui);
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(status_rect), |ui| {
             let frame = egui::Frame::new()
@@ -863,6 +864,10 @@ impl FractronApp {
                     ui.label(egui::RichText::new(&status_left).color(egui::Color32::from_gray(220)));
                     ui.separator();
                     ui.label(egui::RichText::new("Renderer: GPU").color(egui::Color32::from_gray(200)));
+                    if let Some(hint) = drag_constraint_hint {
+                        ui.separator();
+                        ui.label(egui::RichText::new(hint).color(egui::Color32::from_rgb(224, 196, 118)));
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             egui::RichText::new(status_right)
@@ -872,6 +877,32 @@ impl FractronApp {
                 });
             });
         });
+    }
+
+    fn active_triad_axis_constraint_hint(&self, ui: &egui::Ui) -> Option<&'static str> {
+        let (primary_down, shift, alt) = ui.input(|i| {
+            (
+                i.pointer.button_down(egui::PointerButton::Primary),
+                i.modifiers.shift,
+                i.modifiers.alt,
+            )
+        });
+        if !primary_down {
+            return None;
+        }
+
+        match self.triad_drag_handle {
+            Some(TriadHandle::XAxis) | Some(TriadHandle::YAxis) => {
+                if shift {
+                    Some("Constraint: Rotate only")
+                } else if alt {
+                    Some("Constraint: Unconstrained")
+                } else {
+                    Some("Constraint: Rotate + Scale")
+                }
+            }
+            _ => None,
+        }
     }
 
 }
