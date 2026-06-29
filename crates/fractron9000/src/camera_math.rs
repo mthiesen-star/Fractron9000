@@ -112,6 +112,78 @@ pub fn solve_pre_affine_y_axis_endpoint(pre_affine_start: Mat3, target_y_endpoin
     next_pre_affine
 }
 
+fn rotated_axes_from_dragged_axis(
+    dragged_axis_start: Vec2,
+    other_axis_start: Vec2,
+    target_dragged_axis: Vec2,
+) -> Option<(Vec2, Vec2)> {
+    let start_len = dragged_axis_start.length();
+    let target_len = target_dragged_axis.length();
+    if start_len <= 1e-8 || target_len <= 1e-8 {
+        return None;
+    }
+
+    let start_dir = dragged_axis_start / start_len;
+    let target_dir = target_dragged_axis / target_len;
+    let cos_theta = start_dir.dot(target_dir);
+    let sin_theta = start_dir.perp_dot(target_dir);
+
+    let rotate = |v: Vec2| {
+        Vec2::new(
+            cos_theta * v.x - sin_theta * v.y,
+            sin_theta * v.x + cos_theta * v.y,
+        )
+    };
+
+    Some((rotate(dragged_axis_start), rotate(other_axis_start)))
+}
+
+pub fn solve_pre_affine_x_axis_endpoint_preserve_orientation(
+    pre_affine_start: Mat3,
+    target_x_endpoint: Vec2,
+) -> Mat3 {
+    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
+    let x_axis_start = Vec2::new(pre_affine_start.x_axis.x, pre_affine_start.x_axis.y);
+    let y_axis_start = Vec2::new(pre_affine_start.y_axis.x, pre_affine_start.y_axis.y);
+    let target_x_axis = target_x_endpoint - origin;
+
+    let Some((next_x_axis, next_y_axis)) =
+        rotated_axes_from_dragged_axis(x_axis_start, y_axis_start, target_x_axis)
+    else {
+        return pre_affine_start;
+    };
+
+    let mut next_pre_affine = pre_affine_start;
+    next_pre_affine.x_axis.x = next_x_axis.x;
+    next_pre_affine.x_axis.y = next_x_axis.y;
+    next_pre_affine.y_axis.x = next_y_axis.x;
+    next_pre_affine.y_axis.y = next_y_axis.y;
+    next_pre_affine
+}
+
+pub fn solve_pre_affine_y_axis_endpoint_preserve_orientation(
+    pre_affine_start: Mat3,
+    target_y_endpoint: Vec2,
+) -> Mat3 {
+    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
+    let x_axis_start = Vec2::new(pre_affine_start.x_axis.x, pre_affine_start.x_axis.y);
+    let y_axis_start = Vec2::new(pre_affine_start.y_axis.x, pre_affine_start.y_axis.y);
+    let target_y_axis = target_y_endpoint - origin;
+
+    let Some((next_y_axis, next_x_axis)) =
+        rotated_axes_from_dragged_axis(y_axis_start, x_axis_start, target_y_axis)
+    else {
+        return pre_affine_start;
+    };
+
+    let mut next_pre_affine = pre_affine_start;
+    next_pre_affine.x_axis.x = next_x_axis.x;
+    next_pre_affine.x_axis.y = next_x_axis.y;
+    next_pre_affine.y_axis.x = next_y_axis.x;
+    next_pre_affine.y_axis.y = next_y_axis.y;
+    next_pre_affine
+}
+
 pub fn solve_pan_camera_transform(
     pan_camera_start: Option<Mat3>,
     pan_anchor_fractal: Option<Vec2>,
@@ -307,5 +379,45 @@ mod tests {
                 round_trip.y
             );
         }
+    }
+
+    #[test]
+    fn alt_drag_x_rotates_both_axes_and_preserves_axis_lengths() {
+        let pre = Mat3::from_cols(
+            Vec3::new(2.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+        let target_x_endpoint = Vec2::new(0.0, 10.0);
+
+        let next = solve_pre_affine_x_axis_endpoint_preserve_orientation(pre, target_x_endpoint);
+        let next_x = Vec2::new(next.x_axis.x, next.x_axis.y);
+        let next_y = Vec2::new(next.y_axis.x, next.y_axis.y);
+
+        let eps = 1e-5;
+        assert!((next_x.x - 0.0).abs() <= eps);
+        assert!((next_x.y - 2.0).abs() <= eps);
+        assert!((next_y.x + 1.0).abs() <= eps);
+        assert!((next_y.y - 0.0).abs() <= eps);
+    }
+
+    #[test]
+    fn alt_drag_y_rotates_both_axes_and_preserves_axis_lengths() {
+        let pre = Mat3::from_cols(
+            Vec3::new(2.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 0.0, 1.0),
+        );
+        let target_y_endpoint = Vec2::new(10.0, 0.0);
+
+        let next = solve_pre_affine_y_axis_endpoint_preserve_orientation(pre, target_y_endpoint);
+        let next_x = Vec2::new(next.x_axis.x, next.x_axis.y);
+        let next_y = Vec2::new(next.y_axis.x, next.y_axis.y);
+
+        let eps = 1e-5;
+        assert!((next_x.x - 0.0).abs() <= eps);
+        assert!((next_x.y + 2.0).abs() <= eps);
+        assert!((next_y.x - 1.0).abs() <= eps);
+        assert!((next_y.y - 0.0).abs() <= eps);
     }
 }

@@ -529,15 +529,30 @@ impl FractronApp {
             )
             && let Some(branch) = self.flame.branches.get_mut(branch_index)
         {
+            let preserve_axis_orientation = i.modifiers.shift;
             let next_pre_affine = match handle {
                 TriadHandle::Origin => {
                     solve_pre_affine_origin_translation(pre_affine_start, pointer_fractal)
                 }
                 TriadHandle::XAxis => {
-                    solve_pre_affine_x_axis_endpoint(pre_affine_start, pointer_fractal)
+                    if preserve_axis_orientation {
+                        solve_pre_affine_x_axis_endpoint_preserve_orientation(
+                            pre_affine_start,
+                            pointer_fractal,
+                        )
+                    } else {
+                        solve_pre_affine_x_axis_endpoint(pre_affine_start, pointer_fractal)
+                    }
                 }
                 TriadHandle::YAxis => {
-                    solve_pre_affine_y_axis_endpoint(pre_affine_start, pointer_fractal)
+                    if preserve_axis_orientation {
+                        solve_pre_affine_y_axis_endpoint_preserve_orientation(
+                            pre_affine_start,
+                            pointer_fractal,
+                        )
+                    } else {
+                        solve_pre_affine_y_axis_endpoint(pre_affine_start, pointer_fractal)
+                    }
                 }
             };
             if branch.pre_affine != next_pre_affine {
