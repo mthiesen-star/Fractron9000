@@ -56,7 +56,7 @@ pub struct FractronApp {
     output_texture_id: Option<egui::TextureId>,
     drag_start_state: Option<Flame>,
     pan_anchor_fractal: Option<Vec2>,
-    triad_drag_branch: Option<usize>,
+    selected_branch: Option<usize>,
     triad_drag_handle: Option<TriadHandle>,
     triad_drag_handle_offset_ui: Option<egui::Vec2>,
     left_panel_width: f32,
@@ -123,7 +123,7 @@ impl FractronApp {
             output_texture_id: None,
             drag_start_state: None,
             pan_anchor_fractal: None,
-            triad_drag_branch: None,
+            selected_branch: None,
             triad_drag_handle: None,
             triad_drag_handle_offset_ui: None,
             left_panel_width: 128.0,
@@ -310,7 +310,7 @@ impl FractronApp {
                 histogram_width,
                 histogram_height,
                 hovered_triad_handle,
-                self.triad_drag_branch,
+                self.selected_branch,
                 self.triad_drag_handle,
             );
         });
@@ -337,6 +337,10 @@ impl FractronApp {
             let pointer_pos = ui.input(|i| i.pointer.interact_pos());
             self.dump_debug_state(viewport_rect, target_width, target_height, pointer_pos);
         }
+    }
+
+    pub fn selected_branch(&self) -> Option<usize> {
+        self.selected_branch
     }
 
     fn render_left_panel(ui: &mut egui::Ui, left_panel_rect: egui::Rect) {
@@ -416,7 +420,6 @@ impl FractronApp {
         hovered_triad_handle: Option<(usize, TriadHandle)>,
     ) {
         if i.pointer.button_released(egui::PointerButton::Primary) {
-            self.triad_drag_branch = None;
             self.triad_drag_handle = None;
             self.triad_drag_handle_offset_ui = None;
             if self.pan_anchor_fractal.is_none() {
@@ -427,7 +430,7 @@ impl FractronApp {
         if i.pointer.button_pressed(egui::PointerButton::Primary)
             && let Some((branch_index, handle)) = hovered_triad_handle
         {
-            self.triad_drag_branch = Some(branch_index);
+            self.selected_branch = Some(branch_index);
             self.triad_drag_handle = Some(handle);
             self.drag_start_state = Some(self.flame.clone());
 
@@ -467,7 +470,7 @@ impl FractronApp {
 
         if i.pointer.button_released(egui::PointerButton::Middle) {
             self.pan_anchor_fractal = None;
-            if self.triad_drag_branch.is_none() {
+            if self.triad_drag_handle.is_none() {
                 self.drag_start_state = None;
             }
         }
@@ -533,7 +536,7 @@ impl FractronApp {
         let mut flame_dirty = false;
 
         if let (Some(branch_index), Some(handle), Some(pos)) = (
-            self.triad_drag_branch,
+            self.selected_branch,
             self.triad_drag_handle,
             i.pointer.interact_pos(),
         )
@@ -773,7 +776,7 @@ impl FractronApp {
         histogram_width: u32,
         histogram_height: u32,
         hovered_triad_handle: Option<(usize, TriadHandle)>,
-        drag_branch: Option<usize>,
+        selected_branch: Option<usize>,
         drag_handle: Option<TriadHandle>,
     ) {
         let painter = ui.painter_at(viewport_rect);
@@ -815,15 +818,16 @@ impl FractronApp {
             let is_x_hovered = hovered_triad_handle == Some((branch_index, TriadHandle::XAxis));
             let is_y_hovered = hovered_triad_handle == Some((branch_index, TriadHandle::YAxis));
 
-            let is_origin_dragged = drag_branch == Some(branch_index)
+            let is_origin_dragged = selected_branch == Some(branch_index)
                 && drag_handle == Some(TriadHandle::Origin)
                 && pointer_down;
-            let is_x_dragged = drag_branch == Some(branch_index)
+            let is_x_dragged = selected_branch == Some(branch_index)
                 && drag_handle == Some(TriadHandle::XAxis)
                 && pointer_down;
-            let is_y_dragged = drag_branch == Some(branch_index)
+            let is_y_dragged = selected_branch == Some(branch_index)
                 && drag_handle == Some(TriadHandle::YAxis)
                 && pointer_down;
+
 
             let origin_color = if is_origin_hovered || is_origin_dragged { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
             let x_color = if is_x_hovered || is_x_dragged { TRIAD_HOVER_COLOR } else { TRIAD_COLOR };
@@ -838,8 +842,10 @@ impl FractronApp {
             let y_radius = if is_y_hovered || is_y_dragged { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
             let hover_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 30, 30));
 
-            painter.line_segment([o_ui, x_ui], egui::Stroke::new(TRIAD_LINE_STROKE, TRIAD_COLOR));
-            painter.line_segment([o_ui, y_ui], egui::Stroke::new(TRIAD_LINE_STROKE, TRIAD_COLOR));
+            let is_selected = selected_branch == Some(branch_index);
+            let line_thickness = if is_selected { TRIAD_LINE_STROKE * 2.0 } else { TRIAD_LINE_STROKE };
+            painter.line_segment([o_ui, x_ui], egui::Stroke::new(line_thickness, TRIAD_COLOR));
+            painter.line_segment([o_ui, y_ui], egui::Stroke::new(line_thickness, TRIAD_COLOR));
 
             painter.circle_filled(o_ui, origin_radius, origin_color);
             painter.circle_filled(x_ui, x_radius, x_color);
@@ -856,7 +862,7 @@ impl FractronApp {
             }
         }
 
-        if drag_branch.is_some() && pointer_down {
+        if selected_branch.is_some() && pointer_down {
             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grabbing);
         } else if hovered_triad_handle.is_some() {
             ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Grab);
