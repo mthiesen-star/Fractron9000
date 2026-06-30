@@ -58,6 +58,7 @@ pub struct FractronApp {
     pan_anchor_fractal: Option<Vec2>,
     triad_drag_branch: Option<usize>,
     triad_drag_handle: Option<TriadHandle>,
+    triad_drag_handle_offset_ui: Option<egui::Vec2>,
     left_panel_width: f32,
     last_flame: Flame,  // Track complete flame state to detect any parameter changes
 }
@@ -124,6 +125,7 @@ impl FractronApp {
             pan_anchor_fractal: None,
             triad_drag_branch: None,
             triad_drag_handle: None,
+            triad_drag_handle_offset_ui: None,
             left_panel_width: 128.0,
             last_flame: flame.clone(),  // Initialize with current flame state
         }
@@ -416,6 +418,7 @@ impl FractronApp {
         if i.pointer.button_released(egui::PointerButton::Primary) {
             self.triad_drag_branch = None;
             self.triad_drag_handle = None;
+            self.triad_drag_handle_offset_ui = None;
             if self.pan_anchor_fractal.is_none() {
                 self.drag_start_state = None;
             }
@@ -427,6 +430,25 @@ impl FractronApp {
             self.triad_drag_branch = Some(branch_index);
             self.triad_drag_handle = Some(handle);
             self.drag_start_state = Some(self.flame.clone());
+
+            // Record the offset from mouse to handle center so dragging doesn't snap.
+            if let Some(mouse_pos) = i.pointer.interact_pos()
+                && let Some(branch) = self.flame.branches.get(branch_index)
+            {
+                let pre = branch.pre_affine;
+                let handle_fractal = match handle {
+                    TriadHandle::Origin => pre.transform_point2(Vec2::ZERO),
+                    TriadHandle::XAxis  => pre.transform_point2(Vec2::X),
+                    TriadHandle::YAxis  => pre.transform_point2(Vec2::Y),
+                };
+                self.triad_drag_handle_offset_ui = fractal_to_ui_space(
+                    viewport_rect,
+                    handle_fractal,
+                    self.flame.camera_transform,
+                    histogram_width,
+                    histogram_height,
+                ).map(|handle_ui| handle_ui - mouse_pos);
+            }
         }
 
         if i.pointer.button_pressed(egui::PointerButton::Middle)
@@ -522,7 +544,7 @@ impl FractronApp {
                 .map(|b| b.pre_affine)
             && let Some(pointer_fractal) = ui_to_fractal_space(
                 viewport_rect,
-                pos,
+                pos + self.triad_drag_handle_offset_ui.unwrap_or(egui::Vec2::ZERO),
                 self.flame.camera_transform,
                 histogram_width,
                 histogram_height,
