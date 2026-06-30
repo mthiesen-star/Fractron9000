@@ -814,17 +814,18 @@ impl FractronApp {
                 continue;
             };
 
+            let is_selected = selected_branch == Some(branch_index);
             let is_origin_hovered = hovered_triad_handle == Some((branch_index, TriadHandle::Origin));
             let is_x_hovered = hovered_triad_handle == Some((branch_index, TriadHandle::XAxis));
             let is_y_hovered = hovered_triad_handle == Some((branch_index, TriadHandle::YAxis));
 
-            let is_origin_dragged = selected_branch == Some(branch_index)
+            let is_origin_dragged = is_selected
                 && drag_handle == Some(TriadHandle::Origin)
                 && pointer_down;
-            let is_x_dragged = selected_branch == Some(branch_index)
+            let is_x_dragged = is_selected
                 && drag_handle == Some(TriadHandle::XAxis)
                 && pointer_down;
-            let is_y_dragged = selected_branch == Some(branch_index)
+            let is_y_dragged = is_selected
                 && drag_handle == Some(TriadHandle::YAxis)
                 && pointer_down;
 
@@ -842,7 +843,6 @@ impl FractronApp {
             let y_radius = if is_y_hovered || is_y_dragged { TRIAD_POINT_RADIUS * 1.4 } else { TRIAD_POINT_RADIUS };
             let hover_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 30, 30));
 
-            let is_selected = selected_branch == Some(branch_index);
             let line_thickness = if is_selected { TRIAD_LINE_STROKE * 2.0 } else { TRIAD_LINE_STROKE };
             painter.line_segment([o_ui, x_ui], egui::Stroke::new(line_thickness, TRIAD_COLOR));
             painter.line_segment([o_ui, y_ui], egui::Stroke::new(line_thickness, TRIAD_COLOR));
