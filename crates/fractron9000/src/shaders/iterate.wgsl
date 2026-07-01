@@ -53,22 +53,11 @@ fn pcg_random(state: ptr<function, u32>) -> f32 {
 }
 
 fn select_weighted_branch(state: ptr<function, u32>, branch_count: u32) -> u32 {
-    // Sum positive branch weights; if all are non-positive, fall back to uniform selection.
-    var total_weight = 0.0;
-    for (var i = 0u; i < branch_count; i++) {
-        let w = max(read_branch(i).weight, 0.0);
-        total_weight = total_weight + w;
-    }
-
-    if total_weight <= 0.0 {
-        let uniform_idx = u32(pcg_random(state) * f32(branch_count));
-        return min(uniform_idx, branch_count - 1u);
-    }
-
-    let pick_value = pcg_random(state) * total_weight;
+    // Weights are pre-normalized on CPU to sum to ~1.0.
+    let pick_value = pcg_random(state);
     var cumulative = 0.0;
     for (var i = 0u; i < branch_count; i++) {
-        cumulative = cumulative + max(read_branch(i).weight, 0.0);
+        cumulative = cumulative + read_branch(i).weight;
         if pick_value <= cumulative {
             return i;
         }

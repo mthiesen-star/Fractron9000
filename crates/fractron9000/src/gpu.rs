@@ -935,12 +935,38 @@ impl GpuRenderer {
             vps.row1[0], vps.row1[1], vps.row1[2], vps.row1[3],
         ]
     }
+
+    fn normalized_branch_weights(flame: &Flame) -> Vec<f32> {
+        let branch_count = flame.branches.len();
+        if branch_count == 0 {
+            return Vec::new();
+        }
+
+        let clamped_weights: Vec<f32> = flame
+            .branches
+            .iter()
+            .map(|branch| branch.weight.max(0.0))
+            .collect();
+
+        let weight_sum: f32 = clamped_weights.iter().sum();
+        if weight_sum > 0.0 {
+            clamped_weights.iter().map(|w| *w / weight_sum).collect()
+        } else {
+            vec![1.0 / branch_count as f32; branch_count]
+        }
+    }
     
     fn flame_to_gpu_branches(flame: &Flame) -> (Vec<f32>, Vec<GpuVariEntry>) {
         let mut branch_data = Vec::new();  // Flat array of f32
         let mut gpu_variations = Vec::new();
+        let branch_count = flame.branches.len();
+        let normalized_weights = Self::normalized_branch_weights(flame);
         
         log::debug!("Converting {} branches to GPU format (flat array)", flame.branches.len());
+        if branch_count > 0 {
+            let normalized_sum: f32 = normalized_weights.iter().sum();
+            log::debug!("  Normalized branch weights sum={}", normalized_sum);
+        }
         
         for (idx, branch) in flame.branches.iter().enumerate() {
             let var_offset = gpu_variations.len() as u32;
@@ -966,7 +992,12 @@ impl GpuRenderer {
             log::debug!("  Branch {}: chroma=[{}, {}]", idx, branch.chroma.x, branch.chroma.y);
             log::debug!("    pre_affine row0: {:?}", pre_affine_gpu.row0);
             log::debug!("    pre_affine row1: {:?}", pre_affine_gpu.row1);
-            log::debug!("    weight={}, color_weight={}", branch.weight, branch.color_weight);
+            log::debug!(
+                "    weight(raw)={}, weight(norm)={}, color_weight={}",
+                branch.weight,
+                normalized_weights[idx],
+                branch.color_weight
+            );
             log::debug!("    var_count={}, var_offset={}", var_count, var_offset);
             
             // Pack branch into flat array: 18 f32 elements per branch
@@ -999,7 +1030,7 @@ impl GpuRenderer {
             branch_data.push(branch.chroma.x);
             branch_data.push(branch.chroma.y);
             
-            branch_data.push(branch.weight);
+            branch_data.push(normalized_weights[idx]);
             branch_data.push(branch.color_weight);
             
             // Bitcast u32 to f32
