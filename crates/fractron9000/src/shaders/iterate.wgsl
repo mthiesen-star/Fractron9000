@@ -52,6 +52,31 @@ fn pcg_random(state: ptr<function, u32>) -> f32 {
     return f32((word >> 22u) ^ word) / f32(0xffffffff);
 }
 
+fn select_weighted_branch(state: ptr<function, u32>, branch_count: u32) -> u32 {
+    // Sum positive branch weights; if all are non-positive, fall back to uniform selection.
+    var total_weight = 0.0;
+    for (var i = 0u; i < branch_count; i++) {
+        let w = max(read_branch(i).weight, 0.0);
+        total_weight = total_weight + w;
+    }
+
+    if total_weight <= 0.0 {
+        let uniform_idx = u32(pcg_random(state) * f32(branch_count));
+        return min(uniform_idx, branch_count - 1u);
+    }
+
+    let pick_value = pcg_random(state) * total_weight;
+    var cumulative = 0.0;
+    for (var i = 0u; i < branch_count; i++) {
+        cumulative = cumulative + max(read_branch(i).weight, 0.0);
+        if pick_value <= cumulative {
+            return i;
+        }
+    }
+
+    return branch_count - 1u;
+}
+
 // ============================================================================
 // VARIATIONS (30 functions matching Legacy IDs)
 // ============================================================================
@@ -301,10 +326,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     
     // Iterate
     for (var iter = 0u; iter < MAX_ITERATIONS_PER_THREAD; iter++) {
-        // Pick random branch
-        let branch_idx = u32(pcg_random(&state) * f32(flame.branch_count));
-        let safe_branch_idx = min(branch_idx, flame.branch_count - 1u);
-        let branch = read_branch(safe_branch_idx);
+        // Pick branch according to per-branch weights.
+        let branch_idx = select_weighted_branch(&state, flame.branch_count);
+        let branch = read_branch(branch_idx);
         
         // Apply pre-affine transform
         let t = apply_affine(p, branch.pre_affine);

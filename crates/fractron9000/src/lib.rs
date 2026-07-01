@@ -369,6 +369,12 @@ impl FractronApp {
                 ui.add_space(4.0);
 
                 if let Some(branch_index) = self.selected_branch {
+                    if self.render_branch_parameter_controls(ui, branch_index) {
+                        panel_dirty = true;
+                    }
+
+                    ui.add_space(8.0);
+
                     if let Some(branch) = self.flame.branches.get(branch_index) {
                         let chroma = branch.chroma;  // Copy the chroma value
                         if self.render_palette_picker(ui, frame, chroma) {
@@ -430,6 +436,46 @@ impl FractronApp {
         if (self.flame.vibrancy - old_vibrancy).abs() > f32::EPSILON {
             changed = true;
         }
+
+        changed
+    }
+
+    fn render_branch_parameter_controls(&mut self, ui: &mut egui::Ui, branch_index: usize) -> bool {
+        let Some(branch) = self.flame.branches.get_mut(branch_index) else {
+            return false;
+        };
+
+        let mut changed = false;
+
+        ui.horizontal(|ui| {
+            ui.label("Weight:");
+            if ui
+                .add(
+                    egui::DragValue::new(&mut branch.weight)
+                        .speed(0.01)
+                        .range(0.0..=10.0)
+                        .fixed_decimals(2),
+                )
+                .changed()
+            {
+                changed = true;
+            }
+        });
+
+        ui.horizontal(|ui| {
+            ui.label("Color Weight:");
+            if ui
+                .add(
+                    egui::DragValue::new(&mut branch.color_weight)
+                        .speed(0.01)
+                        .range(0.0..=1.0)
+                        .fixed_decimals(2),
+                )
+                .changed()
+            {
+                changed = true;
+            }
+        });
 
         changed
     }
