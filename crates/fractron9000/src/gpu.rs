@@ -9,6 +9,7 @@ use crate::camera_math::compute_vps_transform;
 // Iteration constants (matching chaos game chaos settings)
 const THREADS_PER_FRAME: u32 = 65536;
 const ITERATIONS_PER_THREAD: u32 = 1000;
+const MAX_VARIATIONS_PER_BRANCH: usize = 4;
 
 /// Set to false to disable 2×2 temporal jitter antialiasing for comparison.
 const JITTER_AA_ENABLED: bool = true;
@@ -970,14 +971,30 @@ impl GpuRenderer {
         
         for (idx, branch) in flame.branches.iter().enumerate() {
             let var_offset = gpu_variations.len() as u32;
-            let var_count = branch.variations.len() as u32;
+            let packed_var_count = branch.variations.len().min(MAX_VARIATIONS_PER_BRANCH) as u32;
             
-            for var_entry in &branch.variations {
+            if branch.variations.len() > MAX_VARIATIONS_PER_BRANCH {
+                log::debug!(
+                    "      truncating branch {} variations from {} to {}",
+                    idx,
+                    branch.variations.len(),
+                    MAX_VARIATIONS_PER_BRANCH
+                );
+            }
+
+            for var_entry in branch.variations.iter().take(MAX_VARIATIONS_PER_BRANCH) {
                 gpu_variations.push(GpuVariEntry {
                     var_id: var_entry.variation.id() as u32,
                     weight: var_entry.weight,
                 });
                 log::debug!("      var_id={}, weight={}", var_entry.variation.id(), var_entry.weight);
+            }
+
+            for _ in packed_var_count as usize..MAX_VARIATIONS_PER_BRANCH {
+                gpu_variations.push(GpuVariEntry {
+                    var_id: 0,
+                    weight: 0.0,
+                });
             }
             
             // LOG THE RAW MATRIX BEFORE CONVERSION
@@ -998,7 +1015,7 @@ impl GpuRenderer {
                 normalized_weights[idx],
                 branch.color_weight
             );
-            log::debug!("    var_count={}, var_offset={}", var_count, var_offset);
+            log::debug!("    var_count={}, var_offset={}", packed_var_count, var_offset);
             
             // Pack branch into flat array: 18 f32 elements per branch
             // [0-2]: pre_affine row0 (a, b, e)
@@ -1034,7 +1051,7 @@ impl GpuRenderer {
             branch_data.push(branch.color_weight);
             
             // Bitcast u32 to f32
-            branch_data.push(f32::from_bits(var_count));
+            branch_data.push(f32::from_bits(packed_var_count));
             branch_data.push(f32::from_bits(var_offset));
         }
         

@@ -2,9 +2,10 @@ mod gpu;
 mod camera_math;
 
 use gpu::GpuRenderer;
-use fractal_core::flame::Flame;
+use fractal_core::flame::{Flame, VariEntry};
 use fractal_core::io::parse_flame_file;
-use glam::Vec2;
+use fractal_core::variations::Variation;
+use glam::{Vec2, Vec4};
 use camera_math::*;
 
 /// Load a named flame from a .flame file.
@@ -375,6 +376,12 @@ impl FractronApp {
 
                     ui.add_space(8.0);
 
+                    if self.render_branch_variation_controls(ui, branch_index) {
+                        panel_dirty = true;
+                    }
+
+                    ui.add_space(8.0);
+
                     if let Some(branch) = self.flame.branches.get(branch_index) {
                         let chroma = branch.chroma;  // Copy the chroma value
                         if self.render_palette_picker(ui, frame, chroma) {
@@ -437,6 +444,32 @@ impl FractronApp {
             changed = true;
         }
 
+        // Background color control
+        let old_background = self.flame.background;
+        ui.horizontal(|ui| {
+            ui.label("Background:");
+            let mut background = [
+                self.flame.background.x,
+                self.flame.background.y,
+                self.flame.background.z,
+                self.flame.background.w,
+            ];
+            if ui
+                .color_edit_button_rgba_unmultiplied(&mut background)
+                .changed()
+            {
+                self.flame.background = Vec4::new(
+                    background[0],
+                    background[1],
+                    background[2],
+                    background[3],
+                );
+            }
+        });
+        if self.flame.background != old_background {
+            changed = true;
+        }
+
         changed
     }
 
@@ -476,6 +509,62 @@ impl FractronApp {
                 changed = true;
             }
         });
+
+        changed
+    }
+
+    fn render_branch_variation_controls(&mut self, ui: &mut egui::Ui, branch_index: usize) -> bool {
+        const MAX_VISIBLE_VARIATIONS: usize = 4;
+
+        let Some(branch) = self.flame.branches.get_mut(branch_index) else {
+            return false;
+        };
+
+        let mut changed = false;
+
+        ui.label(egui::RichText::new("Variations").color(egui::Color32::from_gray(180)));
+        ui.add_space(4.0);
+
+        for slot in 0..MAX_VISIBLE_VARIATIONS {
+            let current = branch
+                .variations
+                .get(slot)
+                .copied()
+                .unwrap_or(VariEntry::new(Variation::Linear, 0.0));
+
+            ui.horizontal(|ui| {
+                let mut selected_variation = current.variation;
+                egui::ComboBox::from_id_salt(("branch-variation", branch_index, slot))
+                    .width(130.0)
+                    .selected_text(selected_variation.name())
+                    .show_ui(ui, |ui| {
+                        for variation in Variation::all() {
+                            ui.selectable_value(&mut selected_variation, *variation, variation.name());
+                        }
+                    });
+
+                let mut weight = current.weight;
+                let weight_changed = ui
+                    .add(
+                        egui::DragValue::new(&mut weight)
+                            .speed(0.01)
+                            .range(0.0..=1.0)
+                            .fixed_decimals(2),
+                    )
+                    .changed();
+
+                if selected_variation != current.variation || weight_changed {
+                    if branch.variations.len() <= slot {
+                        branch
+                            .variations
+                            .resize_with(slot + 1, || VariEntry::new(Variation::Linear, 0.0));
+                    }
+
+                    branch.variations[slot] = VariEntry::new(selected_variation, weight.clamp(0.0, 1.0));
+                    changed = true;
+                }
+            });
+        }
 
         changed
     }
