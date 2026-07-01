@@ -139,7 +139,9 @@ impl eframe::App for FractronApp {
         let status_right = self.render_content_area(ui, content_rect, _frame);
         self.render_status_bar(ui, status_rect, status_right);
 
-        ui.ctx().request_repaint();
+        if let Some(renderer) = &mut self.gpu_renderer && renderer.frame_count() < 128 {
+            ui.ctx().request_repaint();
+        }
     }
 
     #[cfg(target_arch = "wasm32")]
