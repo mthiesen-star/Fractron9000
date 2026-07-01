@@ -344,7 +344,7 @@ impl FractronApp {
     }
 
     fn render_left_panel(&mut self, ui: &mut egui::Ui, left_panel_rect: egui::Rect, frame: &mut eframe::Frame) -> bool {
-        let mut palette_dirty = false;
+        let mut panel_dirty = false;
         ui.scope_builder(egui::UiBuilder::new().max_rect(left_panel_rect), |ui| {
             let frame_ui = egui::Frame::new()
                 .fill(egui::Color32::from_rgb(18, 20, 25))
@@ -352,21 +352,86 @@ impl FractronApp {
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 48, 56)));
 
             frame_ui.show(ui, |ui| {
+                ui.label(egui::RichText::new("Tone Mapping").color(egui::Color32::from_gray(200)));
+                ui.add_space(4.0);
+
+                if self.render_tone_map_controls(ui) {
+                    panel_dirty = true;
+                }
+
+                ui.add_space(12.0);
+                ui.separator();
+                ui.add_space(8.0);
+
                 ui.label(egui::RichText::new("Palette + Parameters").color(egui::Color32::from_gray(200)));
                 ui.add_space(4.0);
 
                 if let Some(branch_index) = self.selected_branch {
                     if let Some(branch) = self.flame.branches.get(branch_index) {
                         let chroma = branch.chroma;  // Copy the chroma value
-                        palette_dirty = self.render_palette_picker(ui, frame, chroma);
+                        if self.render_palette_picker(ui, frame, chroma) {
+                            panel_dirty = true;
+                        }
                     }
                 } else {
                     ui.label(egui::RichText::new("(no branch selected)").color(egui::Color32::from_gray(140)));
                 }
             });
         });
-        palette_dirty
+        panel_dirty
     }
+
+    fn render_tone_map_controls(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut changed = false;
+
+        // Brightness control
+        let old_brightness = self.flame.brightness;
+        ui.horizontal(|ui| {
+            ui.label("Brightness:");
+            ui.add(
+                egui::DragValue::new(&mut self.flame.brightness)
+                    .speed(0.01)
+                    .range(0.0..=5.0)
+                    .fixed_decimals(2),
+            );
+        });
+        if (self.flame.brightness - old_brightness).abs() > f32::EPSILON {
+            changed = true;
+        }
+
+        // Gamma control
+        let old_gamma = self.flame.gamma;
+        ui.horizontal(|ui| {
+            ui.label("Gamma:");
+            ui.add(
+                egui::DragValue::new(&mut self.flame.gamma)
+                    .speed(0.01)
+                    .range(0.1..=10.0)
+                    .fixed_decimals(2),
+            );
+        });
+        if (self.flame.gamma - old_gamma).abs() > f32::EPSILON {
+            changed = true;
+        }
+
+        // Vibrancy control
+        let old_vibrancy = self.flame.vibrancy;
+        ui.horizontal(|ui| {
+            ui.label("Vibrancy:");
+            ui.add(
+                egui::DragValue::new(&mut self.flame.vibrancy)
+                    .speed(0.01)
+                    .range(0.0..=1.0)
+                    .fixed_decimals(2),
+            );
+        });
+        if (self.flame.vibrancy - old_vibrancy).abs() > f32::EPSILON {
+            changed = true;
+        }
+
+        changed
+    }
+
 
     fn render_palette_picker(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame, chroma: Vec2) -> bool {
         const PALETTE_SIZE: f32 = 200.0;  // Square palette widget size in UI points
