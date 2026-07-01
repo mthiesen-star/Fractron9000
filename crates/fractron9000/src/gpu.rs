@@ -612,6 +612,14 @@ impl GpuRenderer {
         &self.device
     }
 
+    pub fn palette_texture_view(&self) -> &TextureView {
+        &self.palette_texture_view
+    }
+
+    pub fn palette_size(&self) -> (u32, u32) {
+        (256, 256)  // 2D palette is always 256x256
+    }
+
     pub fn needs_resize(&self, target_width: u32, target_height: u32) -> bool {
         let target_width = target_width.clamp(32, 8192);
         let target_height = target_height.clamp(32, 8192);

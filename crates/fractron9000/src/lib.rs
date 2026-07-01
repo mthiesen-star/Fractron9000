@@ -126,7 +126,7 @@ impl FractronApp {
             selected_branch: None,
             triad_drag_handle: None,
             triad_drag_handle_offset_ui: None,
-            left_panel_width: 128.0,
+            left_panel_width: 256.0,
             last_flame: flame.clone(),  // Initialize with current flame state
         }
     }
@@ -226,11 +226,11 @@ impl FractronApp {
 
         let mut status_right = "Ready";
 
-        Self::render_left_panel(ui, left_panel_rect);
+        let left_panel_dirty = self.render_left_panel(ui, left_panel_rect, _frame);
         Self::render_splitter(ui, splitter_rect, splitter_response.hovered(), splitter_response.dragged());
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(viewport_rect), |ui| {
-            let mut flame_dirty = false;
+            let mut flame_dirty = left_panel_dirty;
 
             let viewport_aspect = viewport_rect.width() / viewport_rect.height().max(1e-6);
             if let Some(aspect_camera) = solve_aspect_camera_transform(self.flame.camera_transform, viewport_aspect)
@@ -343,20 +343,123 @@ impl FractronApp {
         self.selected_branch
     }
 
-    fn render_left_panel(ui: &mut egui::Ui, left_panel_rect: egui::Rect) {
+    fn render_left_panel(&mut self, ui: &mut egui::Ui, left_panel_rect: egui::Rect, frame: &mut eframe::Frame) -> bool {
+        let mut palette_dirty = false;
         ui.scope_builder(egui::UiBuilder::new().max_rect(left_panel_rect), |ui| {
-            let frame = egui::Frame::new()
+            let frame_ui = egui::Frame::new()
                 .fill(egui::Color32::from_rgb(18, 20, 25))
                 .inner_margin(egui::Margin::symmetric(8, 8))
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 48, 56)));
 
-            frame.show(ui, |ui| {
+            frame_ui.show(ui, |ui| {
                 ui.label(egui::RichText::new("Palette + Parameters").color(egui::Color32::from_gray(200)));
                 ui.add_space(4.0);
-                ui.label(egui::RichText::new("(placeholder)").color(egui::Color32::from_gray(140)));
+
+                if let Some(branch_index) = self.selected_branch {
+                    if let Some(branch) = self.flame.branches.get(branch_index) {
+                        let chroma = branch.chroma;  // Copy the chroma value
+                        palette_dirty = self.render_palette_picker(ui, frame, chroma);
+                    }
+                } else {
+                    ui.label(egui::RichText::new("(no branch selected)").color(egui::Color32::from_gray(140)));
+                }
             });
         });
+        palette_dirty
     }
+
+    fn render_palette_picker(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame, chroma: Vec2) -> bool {
+        const PALETTE_SIZE: f32 = 200.0;  // Square palette widget size in UI points
+        const CROSSHAIR_SIZE: f32 = 8.0;
+        const CROSSHAIR_THICKNESS: f32 = 1.0;
+
+        // Allocate a clickable rect for the palette widget
+        let (palette_rect, palette_response) = ui.allocate_exact_size(
+            egui::Vec2::splat(PALETTE_SIZE),
+            egui::Sense::click(),
+        );
+
+        // Register palette texture if not already registered
+        let palette_texture_id = if let Some(render_state) = frame.wgpu_render_state() {
+            if let Some(renderer) = self.gpu_renderer.as_ref() {
+                let _ = renderer.palette_size();  // Ensure palette is available
+                let texture_id = render_state.renderer.write().register_native_texture(
+                    renderer.device(),
+                    renderer.palette_texture_view(),
+                    wgpu::FilterMode::Linear,
+                );
+                Some(texture_id)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(texture_id) = palette_texture_id {
+            // Draw the palette texture in the allocated rect
+            let painter = ui.painter_at(palette_rect);
+            painter.image(
+                texture_id,
+                palette_rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+
+            // Handle click to update chroma
+            let mut palette_changed = false;
+            if palette_response.clicked() {
+                if let Some(click_pos) = palette_response.interact_pointer_pos() {
+                    // Map click position within palette rect to chroma [0, 1]
+                    let click_rel = click_pos - palette_rect.min;
+                    let u = (click_rel.x / palette_rect.width()).clamp(0.0, 1.0);
+                    let v = (click_rel.y / palette_rect.height()).clamp(0.0, 1.0);
+                    
+                    if let Some(branch_mut) = self.flame.branches.get_mut(self.selected_branch.unwrap()) {
+                        if (branch_mut.chroma.x - u).abs() > f32::EPSILON || (branch_mut.chroma.y - v).abs() > f32::EPSILON {
+                            branch_mut.chroma = Vec2::new(u, v);
+                            palette_changed = true;
+                        }
+                    }
+                }
+            }
+
+            // Draw crosshair at current chroma position
+            let chroma_ui = palette_rect.min + egui::Vec2::new(
+                chroma.x * palette_rect.width(),
+                chroma.y * palette_rect.height(),
+            );
+
+            let crosshair_color = egui::Color32::WHITE;
+            let h_offset = CROSSHAIR_SIZE / 2.0;
+
+            // Horizontal line
+            painter.line_segment(
+                [
+                    chroma_ui - egui::Vec2::new(h_offset, 0.0),
+                    chroma_ui + egui::Vec2::new(h_offset, 0.0),
+                ],
+                egui::Stroke::new(CROSSHAIR_THICKNESS, crosshair_color),
+            );
+
+            // Vertical line
+            painter.line_segment(
+                [
+                    chroma_ui - egui::Vec2::new(0.0, h_offset),
+                    chroma_ui + egui::Vec2::new(0.0, h_offset),
+                ],
+                egui::Stroke::new(CROSSHAIR_THICKNESS, crosshair_color),
+            );
+
+            ui.add_space(8.0);
+            ui.label(format!("Chroma: ({:.2}, {:.2})", chroma.x, chroma.y));
+            palette_changed
+        } else {
+            ui.label(egui::RichText::new("(palette unavailable)").color(egui::Color32::from_gray(140)));
+            false
+        }
+    }
+
 
     fn render_splitter(
         ui: &mut egui::Ui,
