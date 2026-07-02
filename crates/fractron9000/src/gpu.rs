@@ -1456,6 +1456,8 @@ mod tests {
         let b0 = &flame.branches[0];
         let b1 = &flame.branches[1];
         let b2 = &flame.branches[2];
+        let normalized_weights = GpuRenderer::normalized_branch_weights(&flame);
+        let b0_expected_weight = normalized_weights[0];
         
         let b0_pre_gpu = GpuAffine::from_mat3(b0.pre_affine);
         let b1_pre_gpu = GpuAffine::from_mat3(b1.pre_affine);
@@ -1482,10 +1484,10 @@ mod tests {
         log::debug!("  GPU read: chroma=({}, {}), weight={}, color_weight={}", 
                  results[8], results[9], results[10], results[11]);
         log::debug!("  Expected: chroma=({}, {}), weight={}, color_weight={}", 
-                 b0.chroma.x, b0.chroma.y, b0.weight, b0.color_weight);
+                 b0.chroma.x, b0.chroma.y, b0_expected_weight, b0.color_weight);
         assert!((results[8] - b0.chroma.x).abs() < 0.001, "Branch 0 chroma.x mismatch");
         assert!((results[9] - b0.chroma.y).abs() < 0.001, "Branch 0 chroma.y mismatch");
-        assert!((results[10] - b0.weight).abs() < 0.001, "Branch 0 weight mismatch");
+        assert!((results[10] - b0_expected_weight).abs() < 0.001, "Branch 0 weight mismatch");
         assert!((results[11] - b0.color_weight).abs() < 0.001, "Branch 0 color_weight mismatch");
 
         // Test 4: Branch 1 translation (results at indices 12-15)
