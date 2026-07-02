@@ -5,6 +5,9 @@ members = [
 ]
 resolver = "3"
 
+[workspace.package]
+version = "0.5.0"
+
 [profile.release]
 opt-level = 3
 lto = true        # link-time optimization — important for WASM bundle size
