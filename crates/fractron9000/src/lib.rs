@@ -110,15 +110,24 @@ impl FractronApp {
 }
 
 impl eframe::App for FractronApp {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let Some(renderer) = &mut self.gpu_renderer else { return; };
+        let flame_changed = self.flame != self.last_flame;
+        if flame_changed {
+            self.last_flame = self.flame.clone();
+            renderer.update_flame(&self.flame);
+        }
+        renderer.advance_frame(flame_changed);
+        if renderer.frame_count() < 128 {
+            ctx.request_repaint();
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let (menu_rect, content_rect, status_rect) = self.ui_regions(ui.max_rect());
         self.render_menu_bar(ui, menu_rect);
         let status_right = self.render_content_area(ui, content_rect, _frame);
         self.render_status_bar(ui, status_rect, status_right);
-
-        if let Some(renderer) = &mut self.gpu_renderer && renderer.frame_count() < 128 {
-            ui.ctx().request_repaint();
-        }
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -161,18 +170,15 @@ impl FractronApp {
 
         let mut status_right = "Ready";
 
-        let left_panel_dirty = self.render_left_panel(ui, left_panel_rect, _frame);
+        self.render_left_panel(ui, left_panel_rect, _frame);
         Self::render_splitter(ui, splitter_rect, splitter_response.hovered(), splitter_response.dragged());
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(viewport_rect), |ui| {
-            let mut flame_dirty = left_panel_dirty;
-
             let viewport_aspect = viewport_rect.width() / viewport_rect.height().max(1e-6);
             if let Some(aspect_camera) = solve_aspect_camera_transform(self.flame.camera_transform, viewport_aspect)
             {
                 if aspect_camera != self.flame.camera_transform {
                     self.flame.camera_transform = aspect_camera;
-                    flame_dirty = true;
                 }
             }
 
@@ -206,30 +212,18 @@ impl FractronApp {
                 ui.input(|i| i.pointer.hover_pos()),
             );
 
-            if self.handle_viewport_input(
+            self.handle_viewport_input(
                 ui,
                 viewport_rect,
                 histogram_width,
                 histogram_height,
                 hovered_triad_handle,
-            ) {
-                flame_dirty = true;
-            }
+            );
 
-            let flame_changed = self.flame != self.last_flame;
-            let should_clear_histogram = flame_dirty || flame_changed;
-            if flame_changed {
-                self.last_flame = self.flame.clone();
-            }
-
-            let Some(renderer) = self.gpu_renderer.as_mut() else {
+            let Some(renderer) = self.gpu_renderer.as_ref() else {
                 Self::report_renderer_unavailable(ui, &mut status_right);
                 return;
             };
-            if flame_dirty {
-                renderer.update_flame(&self.flame);
-            }
-            renderer.advance_frame(should_clear_histogram);
             status_right = Self::present_output_texture(
                 ui,
                 renderer,
