@@ -10,6 +10,7 @@ use crate::camera_math::compute_vps_transform;
 const THREADS_PER_FRAME: u32 = 65536;
 const ITERATIONS_PER_THREAD: u32 = 1000;
 const MAX_VARIATIONS_PER_BRANCH: usize = 4;
+const QUALITY_FRAME_LIMIT: u32 = 128;
 
 /// Set to false to disable 2×2 temporal jitter antialiasing for comparison.
 const JITTER_AA_ENABLED: bool = true;
@@ -522,9 +523,15 @@ impl GpuRenderer {
         self.frame_count
     }
 
+    pub fn is_converged(&self) -> bool {
+        self.frame_count >= QUALITY_FRAME_LIMIT
+    }
+
     pub fn advance_frame(&mut self, should_clear_histogram: bool) {
         if should_clear_histogram {
             self.clear_histogram();
+        } else if self.is_converged() {
+            return;
         }
         self.iterate(THREADS_PER_FRAME);
         self.tonemap();
@@ -874,6 +881,10 @@ impl GpuRenderer {
         self.output_height = new_height;
         self.iterate_bind_group = iterate_bind_group;
         self.tonemap_bind_group = tonemap_bind_group;
+
+        // New histogram is already zeroed; reset counters to match.
+        self.iteration_count = 0;
+        self.frame_count = 0;
 
         Ok(())
     }

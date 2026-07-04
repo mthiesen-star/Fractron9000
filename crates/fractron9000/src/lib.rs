@@ -37,7 +37,12 @@ pub struct FractronApp {
     triad_drag_handle: Option<TriadHandle>,
     triad_drag_handle_offset_ui: Option<egui::Vec2>,
     left_panel_width: f32,
-    last_flame: Flame,  // Track complete flame state to detect any parameter changes
+    last_flame: Flame,
+    // Written by ui(), read by the following frame's logic() (layout only known after ui() runs)
+    viewport_rect: egui::Rect,
+    histogram_size: (u32, u32),
+    // Written by logic(), read by ui() within the same frame (logic() runs before ui())
+    hovered_triad_handle: Option<(usize, TriadHandle)>,
 }
 
 impl FractronApp {
@@ -104,13 +109,36 @@ impl FractronApp {
             triad_drag_handle: None,
             triad_drag_handle_offset_ui: None,
             left_panel_width: 256.0,
-            last_flame: flame.clone(),  // Initialize with current flame state
+            last_flame: flame.clone(),
+            viewport_rect: egui::Rect::ZERO,
+            histogram_size: (1024, 768),
+            hovered_triad_handle: None,
         }
     }
 }
 
 impl eframe::App for FractronApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process viewport input using the current frame's input state.
+        // viewport_rect and histogram_size were cached by the previous ui() pass.
+        if self.viewport_rect.area() > 0.0 {
+            let (histogram_width, histogram_height) = self.histogram_size;
+            self.hovered_triad_handle = Self::pick_hovered_triad_handle(
+                self.viewport_rect,
+                &self.flame,
+                histogram_width,
+                histogram_height,
+                ctx.input(|i| i.pointer.hover_pos()),
+            );
+            self.handle_viewport_input(
+                ctx,
+                self.viewport_rect,
+                histogram_width,
+                histogram_height,
+                self.hovered_triad_handle,
+            );
+        }
+
         let Some(renderer) = &mut self.gpu_renderer else { return; };
         let flame_changed = self.flame != self.last_flame;
         if flame_changed {
@@ -118,7 +146,7 @@ impl eframe::App for FractronApp {
             renderer.update_flame(&self.flame);
         }
         renderer.advance_frame(flame_changed);
-        if renderer.frame_count() < 128 {
+        if !renderer.is_converged() {
             ctx.request_repaint();
         }
     }
@@ -161,6 +189,7 @@ impl FractronApp {
 
         let (left_panel_rect, splitter_rect, viewport_rect) =
             Self::split_content_rects(content_rect, self.left_panel_width, splitter_width);
+        self.viewport_rect = viewport_rect;
 
         let pixels_per_point = ui.ctx().pixels_per_point();
         let target_width = (viewport_rect.width() * pixels_per_point).round().max(1.0) as u32;
@@ -203,27 +232,8 @@ impl FractronApp {
                 return;
             };
             let (histogram_width, histogram_height) = renderer.histogram_size();
+            self.histogram_size = (histogram_width, histogram_height);
 
-            let hovered_triad_handle = Self::pick_hovered_triad_handle(
-                viewport_rect,
-                &self.flame,
-                histogram_width,
-                histogram_height,
-                ui.input(|i| i.pointer.hover_pos()),
-            );
-
-            self.handle_viewport_input(
-                ui,
-                viewport_rect,
-                histogram_width,
-                histogram_height,
-                hovered_triad_handle,
-            );
-
-            let Some(renderer) = self.gpu_renderer.as_ref() else {
-                Self::report_renderer_unavailable(ui, &mut status_right);
-                return;
-            };
             status_right = Self::present_output_texture(
                 ui,
                 renderer,
@@ -238,7 +248,7 @@ impl FractronApp {
                 &self.flame,
                 histogram_width,
                 histogram_height,
-                hovered_triad_handle,
+                self.hovered_triad_handle,
                 self.selected_branch,
                 self.triad_drag_handle,
             );

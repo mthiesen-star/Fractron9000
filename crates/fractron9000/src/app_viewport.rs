@@ -10,7 +10,7 @@ use glam::Vec2;
 impl FractronApp {
     pub(crate) fn handle_viewport_input(
         &mut self,
-        ui: &egui::Ui,
+        ctx: &egui::Context,
         viewport_rect: egui::Rect,
         histogram_width: u32,
         histogram_height: u32,
@@ -18,7 +18,7 @@ impl FractronApp {
     ) -> bool {
         let mut flame_dirty = false;
 
-        ui.input(|i| {
+        ctx.input(|i| {
             self.process_pointer_button_transitions(
                 i,
                 viewport_rect,
