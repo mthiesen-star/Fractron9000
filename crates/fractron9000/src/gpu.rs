@@ -3,6 +3,7 @@
 use wgpu::*;
 use wgpu::util::DeviceExt;
 use glam::Mat3;
+use std::time::Instant;
 use fractal_core::flame::Flame;
 use crate::camera_math::compute_vps_transform;
 
@@ -10,7 +11,7 @@ use crate::camera_math::compute_vps_transform;
 const THREADS_PER_FRAME: u32 = 65536;
 const ITERATIONS_PER_THREAD: u32 = 1000;
 const MAX_VARIATIONS_PER_BRANCH: usize = 4;
-const QUALITY_FRAME_LIMIT: u32 = 128;
+const QUALITY_TARGET: f64 = 4096.0;
 
 /// Set to false to disable 2×2 temporal jitter antialiasing for comparison.
 const JITTER_AA_ENABLED: bool = true;
@@ -82,6 +83,8 @@ pub struct GpuRenderer {
     // Render statistics (reset on histogram clear)
     frame_count: u32,
     iteration_count: u64,
+    iteration_reset_time: Instant,
+    last_frame_completed_time: Instant,
     
     // Bind groups
     iterate_bind_group: BindGroup,
@@ -469,6 +472,8 @@ impl GpuRenderer {
             compilation_options: Default::default(),
         });
         
+        let now = Instant::now();
+
         Ok(Self {
             iterate_pipeline,
             tonemap_pipeline,
@@ -490,6 +495,8 @@ impl GpuRenderer {
             queue,
             frame_count: 0,
             iteration_count: 0,
+            iteration_reset_time: now,
+            last_frame_completed_time: now,
             iterate_bind_group,
             tonemap_bind_group,
         })
@@ -517,14 +524,42 @@ impl GpuRenderer {
         );
         self.iteration_count = 0;
         self.frame_count = 0;
+        let now = Instant::now();
+        self.iteration_reset_time = now;
+        self.last_frame_completed_time = now;
+    }
+
+    #[allow(dead_code)]
+    pub fn iteration_count(&self) -> u64 {
+        self.iteration_count
     }
 
     pub fn frame_count(&self) -> u32 {
         self.frame_count
     }
 
+    pub fn quality(&self) -> f64 {
+        let histogram_bins = (self.output_width as u64) * (self.output_height as u64);
+        if histogram_bins == 0 {
+            return 0.0;
+        }
+        (self.iteration_count as f64) / (histogram_bins as f64)
+    }
+
+    #[allow(dead_code)]
+    pub fn iterations_per_sec(&self) -> f64 {
+        let elapsed = self
+            .last_frame_completed_time
+            .saturating_duration_since(self.iteration_reset_time)
+            .as_secs_f64();
+        if elapsed <= 0.0 {
+            return 0.0;
+        }
+        (self.iteration_count as f64) / elapsed
+    }
+
     pub fn is_converged(&self) -> bool {
-        self.frame_count >= QUALITY_FRAME_LIMIT
+        self.quality() >= QUALITY_TARGET
     }
 
     pub fn advance_frame(&mut self, should_clear_histogram: bool) {
@@ -536,6 +571,7 @@ impl GpuRenderer {
         self.iterate(THREADS_PER_FRAME);
         self.tonemap();
         self.frame_count += 1;
+        self.last_frame_completed_time = Instant::now();
     }
 
     fn iterate(&mut self, num_threads: u32) {
@@ -885,6 +921,9 @@ impl GpuRenderer {
         // New histogram is already zeroed; reset counters to match.
         self.iteration_count = 0;
         self.frame_count = 0;
+        let now = Instant::now();
+        self.iteration_reset_time = now;
+        self.last_frame_completed_time = now;
 
         Ok(())
     }

@@ -106,8 +106,21 @@ impl FractronApp {
         status_rect: egui::Rect,
         status_right: &str,
     ) {
-        let frame_count = self.gpu_renderer.as_ref().map(|r| r.frame_count()).unwrap_or(0);
-        let status_left = format!("Frame Count: {}", frame_count);
+        let (iterations_millions, iterations_per_sec_millions, quality) = self
+            .gpu_renderer
+            .as_ref()
+            .map(|r| {
+                (
+                    r.iteration_count() as f64 / 1_000_000.0,
+                    r.iterations_per_sec() / 1_000_000.0,
+                    r.quality(),
+                )
+            })
+            .unwrap_or((0.0, 0.0, 0.0));
+        let status_left = format!(
+            "Performed {:.1}M iterations at {:.1}M iterations/sec for a quality of {:.0}",
+            iterations_millions, iterations_per_sec_millions, quality
+        );
         let drag_constraint_hint = self.active_triad_axis_constraint_hint(ui);
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(status_rect), |ui| {
