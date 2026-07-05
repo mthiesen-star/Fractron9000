@@ -3,7 +3,7 @@
 use wgpu::*;
 use wgpu::util::DeviceExt;
 use glam::Mat3;
-use std::time::Instant;
+use web_time::Instant;
 use fractal_core::flame::Flame;
 use crate::camera_math::compute_vps_transform;
 
