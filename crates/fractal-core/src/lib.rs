@@ -11,7 +11,10 @@
 //! - **Legacy Compatibility**: Variation IDs and structure match the original Fractron9000/Apophysis format.
 //! - **GPU Ready**: Uses glam types (Mat3, Vec2, Vec4) that map directly to GPU memory layouts.
 
+pub mod affine2d;
 pub mod flame;
 pub mod io;
 pub mod palette;
 pub mod variations;
+
+pub use affine2d::Affine2D;
