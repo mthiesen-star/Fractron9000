@@ -1,8 +1,9 @@
 //! Flame data model — Apophysis-compatible IFS parameter set.
 //! All structures are immutable; mutations return new copies for undo/redo support.
 
+use crate::affine2d::Affine2D;
 use crate::variations::Variation;
-use glam::{Mat3, Vec2, Vec4};
+use glam::{Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
 /// A single variation entry (variation function + weight).
@@ -29,11 +30,10 @@ impl VariEntry {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Branch {
     /// Pre-variation affine transform (2D rotation, scale, shear + translation).
-    /// Stored as 3x3 affine matrix for GPU compatibility.
-    pub pre_affine: Mat3,
+    pub pre_affine: Affine2D,
 
     /// Post-variation affine transform.
-    pub post_affine: Mat3,
+    pub post_affine: Affine2D,
 
     /// Chroma color coordinates in [0, 1] palette space (u, v).
     /// Used to index into the color palette.
@@ -54,8 +54,8 @@ impl Branch {
     /// Create a branch with default values.
     pub fn default() -> Self {
         Branch {
-            pre_affine: Mat3::from_scale(Vec2::splat(0.5)),
-            post_affine: Mat3::IDENTITY,
+            pre_affine: Affine2D::from_scale(Vec2::splat(0.5)),
+            post_affine: Affine2D::IDENTITY,
             chroma: Vec2::new(0.5, 0.5),
             weight: 1.0,
             color_weight: 0.5,
@@ -64,13 +64,13 @@ impl Branch {
     }
 
     /// Return a new Branch with updated pre-affine.
-    pub fn with_pre_affine(mut self, affine: Mat3) -> Self {
+    pub fn with_pre_affine(mut self, affine: Affine2D) -> Self {
         self.pre_affine = affine;
         self
     }
 
     /// Return a new Branch with updated post-affine.
-    pub fn with_post_affine(mut self, affine: Mat3) -> Self {
+    pub fn with_post_affine(mut self, affine: Affine2D) -> Self {
         self.post_affine = affine;
         self
     }
@@ -111,8 +111,7 @@ pub struct Flame {
     pub version: String,
 
     /// Camera affine transform (defines view rectangle and zoom).
-    /// Stored as 3x3 affine matrix: typically maps [-1, 1] to screen.
-    pub camera_transform: Mat3,
+    pub camera_transform: Affine2D,
 
     /// Tone-mapping brightness (multiplicative scale for histogram).
     pub brightness: f32,
@@ -139,7 +138,7 @@ impl Flame {
         Flame {
             name: "New Fractal".to_string(),
             version: "Fractron9000 2.0".to_string(),
-            camera_transform: Mat3::IDENTITY,  // No scale - use iteration space directly
+            camera_transform: Affine2D::IDENTITY,
             brightness: 500.0,  // DIAGNOSTIC: cranked way up
             gamma: 2.0,
             vibrancy: 1.0,
@@ -160,44 +159,44 @@ impl Flame {
 
         // Branch 0: bottom right, chroma=(1, 0.5) -> RED
         let b0 = Branch::default()
-            .with_pre_affine(Mat3::from_cols(
-                glam::Vec3::new(0.5, 0.0, 0.0),
-                glam::Vec3::new(0.0, 0.5, 0.0),
-                glam::Vec3::new(0.433, -0.25, 1.0),   // translation: (0.433, -0.25)
-            ))
+            .with_pre_affine(Affine2D {
+                x_axis: Vec2::new(0.5, 0.0),
+                y_axis: Vec2::new(0.0, 0.5),
+                translation: Vec2::new(0.433, -0.25),
+            })
             .with_chroma(Vec2::new(1.0, 0.5))
             .with_weight(1.0);
         flame.branches.push(b0);
 
         // Branch 1: bottom left, chroma=(0.25, 0.9) -> CYAN
         let b1 = Branch::default()
-            .with_pre_affine(Mat3::from_cols(
-                glam::Vec3::new(0.5, 0.0, 0.0),
-                glam::Vec3::new(0.0, 0.5, 0.0),
-                glam::Vec3::new(-0.433, -0.25, 1.0),  // translation: (-0.433, -0.25)
-            ))
+            .with_pre_affine(Affine2D {
+                x_axis: Vec2::new(0.5, 0.0),
+                y_axis: Vec2::new(0.0, 0.5),
+                translation: Vec2::new(-0.433, -0.25),
+            })
             .with_chroma(Vec2::new(0.25, 0.9))
             .with_weight(1.0);
         flame.branches.push(b1);
 
         // Branch 2: top center, chroma=(0.25, 0.1) -> ORANGE/BROWN
         let b2 = Branch::default()
-            .with_pre_affine(Mat3::from_cols(
-                glam::Vec3::new(0.5, 0.0, 0.0),
-                glam::Vec3::new(0.0, 0.5, 0.0),
-                glam::Vec3::new(0.0, 0.5, 1.0),       // translation: (0, 0.5)
-            ))
+            .with_pre_affine(Affine2D {
+                x_axis: Vec2::new(0.5, 0.0),
+                y_axis: Vec2::new(0.0, 0.5),
+                translation: Vec2::new(0.0, 0.5),
+            })
             .with_chroma(Vec2::new(0.25, 0.1))
             .with_weight(1.0);
         flame.branches.push(b2);
 
         // Camera: scale 0.9 to fit nicely. Legacy uses scale=150 which is different
         // but we normalize to [-1, 1] screen space.
-        flame.camera_transform = Mat3::from_cols(
-            glam::Vec3::new(0.9, 0.0, 0.0),    // x_axis: scale x by 0.9
-            glam::Vec3::new(0.0, 0.9, 0.0),    // y_axis: scale y by 0.9
-            glam::Vec3::new(0.0, 0.0, 1.0),    // z_axis: no translation
-        );
+        flame.camera_transform = Affine2D {
+            x_axis: Vec2::new(0.9, 0.0),
+            y_axis: Vec2::new(0.0, 0.9),
+            translation: Vec2::ZERO,
+        };
 
         // Tone mapping params match Legacy sierpinski definition:
         // brightness=1, gamma=2, vibrancy=1
@@ -221,7 +220,7 @@ impl Flame {
     }
 
     /// Return a new Flame with updated camera transform.
-    pub fn with_camera_transform(mut self, camera_transform: Mat3) -> Self {
+    pub fn with_camera_transform(mut self, camera_transform: Affine2D) -> Self {
         self.camera_transform = camera_transform;
         self
     }

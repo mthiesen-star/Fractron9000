@@ -1,16 +1,17 @@
-use glam::{Mat3, Vec2, Vec3};
+use fractal_core::Affine2D;
+use glam::Vec2;
 
 /// Compute the View-Projection-Screen transform used by both renderer and UI mapping.
 ///
 /// This maps fractal space directly to histogram pixel space.
-pub fn compute_vps_transform(camera: Mat3, width: u32, height: u32) -> Mat3 {
+pub fn compute_vps_transform(camera: Affine2D, width: u32, height: u32) -> Affine2D {
     let hw = width as f32 / 2.0;
     let hh = height as f32 / 2.0;
-    let screen_transform = Mat3::from_cols(
-        Vec3::new(hw, 0.0, 0.0),
-        Vec3::new(0.0, hh, 0.0),
-        Vec3::new(hw, hh, 1.0),
-    );
+    let screen_transform = Affine2D {
+        x_axis: Vec2::new(hw, 0.0),
+        y_axis: Vec2::new(0.0, hh),
+        translation: Vec2::new(hw, hh),
+    };
     screen_transform * camera
 }
 
@@ -49,7 +50,7 @@ pub fn ui_to_histogram_space(
 pub fn ui_to_fractal_space(
     viewport_rect: egui::Rect,
     pos: egui::Pos2,
-    camera: Mat3,
+    camera: Affine2D,
     histogram_width: u32,
     histogram_height: u32,
 ) -> Option<Vec2> {
@@ -60,13 +61,13 @@ pub fn ui_to_fractal_space(
         return None;
     }
 
-    Some(vps.inverse().transform_point2(hist))
+    Some(vps.inverse().transform_point(hist))
 }
 
 pub fn fractal_to_ui_space(
     viewport_rect: egui::Rect,
     point: Vec2,
-    camera: Mat3,
+    camera: Affine2D,
     histogram_width: u32,
     histogram_height: u32,
 ) -> Option<egui::Pos2> {
@@ -77,7 +78,7 @@ pub fn fractal_to_ui_space(
     }
 
     let vps = compute_vps_transform(camera, histogram_width, histogram_height);
-    let hist = vps.transform_point2(point);
+    let hist = vps.transform_point(point);
     let u = hist.x / histogram_width as f32;
     let v_ui = 1.0 - (hist.y / histogram_height as f32);
 
@@ -87,25 +88,25 @@ pub fn fractal_to_ui_space(
     ))
 }
 
-pub fn solve_pre_affine_origin_translation(pre_affine_start: Mat3, target_origin: Vec2) -> Mat3 {
+pub fn solve_pre_affine_origin_translation(pre_affine_start: Affine2D, target_origin: Vec2) -> Affine2D {
     let mut next_pre_affine = pre_affine_start;
-    next_pre_affine.z_axis.x = target_origin.x;
-    next_pre_affine.z_axis.y = target_origin.y;
+    next_pre_affine.translation.x = target_origin.x;
+    next_pre_affine.translation.y = target_origin.y;
     next_pre_affine
 }
 
-pub fn solve_pre_affine_x_axis_endpoint(pre_affine_start: Mat3, target_x_endpoint: Vec2) -> Mat3 {
+pub fn solve_pre_affine_x_axis_endpoint(pre_affine_start: Affine2D, target_x_endpoint: Vec2) -> Affine2D {
     let mut next_pre_affine = pre_affine_start;
-    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
+    let origin = pre_affine_start.translation;
     let next_x_axis = target_x_endpoint - origin;
     next_pre_affine.x_axis.x = next_x_axis.x;
     next_pre_affine.x_axis.y = next_x_axis.y;
     next_pre_affine
 }
 
-pub fn solve_pre_affine_y_axis_endpoint(pre_affine_start: Mat3, target_y_endpoint: Vec2) -> Mat3 {
+pub fn solve_pre_affine_y_axis_endpoint(pre_affine_start: Affine2D, target_y_endpoint: Vec2) -> Affine2D {
     let mut next_pre_affine = pre_affine_start;
-    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
+    let origin = pre_affine_start.translation;
     let next_y_axis = target_y_endpoint - origin;
     next_pre_affine.y_axis.x = next_y_axis.x;
     next_pre_affine.y_axis.y = next_y_axis.y;
@@ -139,12 +140,12 @@ fn rotated_axes_from_dragged_axis(
 }
 
 pub fn solve_pre_affine_x_axis_rotate_only(
-    pre_affine_start: Mat3,
+    pre_affine_start: Affine2D,
     target_x_endpoint: Vec2,
-) -> Mat3 {
-    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
-    let x_axis_start = Vec2::new(pre_affine_start.x_axis.x, pre_affine_start.x_axis.y);
-    let y_axis_start = Vec2::new(pre_affine_start.y_axis.x, pre_affine_start.y_axis.y);
+) -> Affine2D {
+    let origin = pre_affine_start.translation;
+    let x_axis_start = pre_affine_start.x_axis;
+    let y_axis_start = pre_affine_start.y_axis;
     let target_x_axis = target_x_endpoint - origin;
 
     let Some((next_x_axis, next_y_axis)) =
@@ -162,12 +163,12 @@ pub fn solve_pre_affine_x_axis_rotate_only(
 }
 
 pub fn solve_pre_affine_y_axis_rotate_only(
-    pre_affine_start: Mat3,
+    pre_affine_start: Affine2D,
     target_y_endpoint: Vec2,
-) -> Mat3 {
-    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
-    let x_axis_start = Vec2::new(pre_affine_start.x_axis.x, pre_affine_start.x_axis.y);
-    let y_axis_start = Vec2::new(pre_affine_start.y_axis.x, pre_affine_start.y_axis.y);
+) -> Affine2D {
+    let origin = pre_affine_start.translation;
+    let x_axis_start = pre_affine_start.x_axis;
+    let y_axis_start = pre_affine_start.y_axis;
     let target_y_axis = target_y_endpoint - origin;
 
     let Some((next_y_axis, next_x_axis)) =
@@ -185,12 +186,12 @@ pub fn solve_pre_affine_y_axis_rotate_only(
 }
 
 pub fn solve_pre_affine_x_axis_rotate_scale_only(
-    pre_affine_start: Mat3,
+    pre_affine_start: Affine2D,
     target_x_endpoint: Vec2,
-) -> Mat3 {
-    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
-    let x_axis_start = Vec2::new(pre_affine_start.x_axis.x, pre_affine_start.x_axis.y);
-    let y_axis_start = Vec2::new(pre_affine_start.y_axis.x, pre_affine_start.y_axis.y);
+) -> Affine2D {
+    let origin = pre_affine_start.translation;
+    let x_axis_start = pre_affine_start.x_axis;
+    let y_axis_start = pre_affine_start.y_axis;
     let target_x_axis = target_x_endpoint - origin;
 
     let Some((next_x_axis_rotated, next_y_axis_rotated)) =
@@ -216,12 +217,12 @@ pub fn solve_pre_affine_x_axis_rotate_scale_only(
 }
 
 pub fn solve_pre_affine_y_axis_rotate_scale_only(
-    pre_affine_start: Mat3,
+    pre_affine_start: Affine2D,
     target_y_endpoint: Vec2,
-) -> Mat3 {
-    let origin = Vec2::new(pre_affine_start.z_axis.x, pre_affine_start.z_axis.y);
-    let x_axis_start = Vec2::new(pre_affine_start.x_axis.x, pre_affine_start.x_axis.y);
-    let y_axis_start = Vec2::new(pre_affine_start.y_axis.x, pre_affine_start.y_axis.y);
+) -> Affine2D {
+    let origin = pre_affine_start.translation;
+    let x_axis_start = pre_affine_start.x_axis;
+    let y_axis_start = pre_affine_start.y_axis;
     let target_y_axis = target_y_endpoint - origin;
 
     let Some((next_y_axis_rotated, next_x_axis_rotated)) =
@@ -247,11 +248,11 @@ pub fn solve_pre_affine_y_axis_rotate_scale_only(
 }
 
 pub fn solve_pan_camera_transform(
-    pan_camera_start: Option<Mat3>,
+    pan_camera_start: Option<Affine2D>,
     pan_anchor_fractal: Option<Vec2>,
     current_pos: Option<egui::Pos2>,
     viewport_rect: egui::Rect,
-) -> Option<Mat3> {
+) -> Option<Affine2D> {
     let (camera_start, anchor_fractal, current_pos) =
         (pan_camera_start?, pan_anchor_fractal?, current_pos?);
     let target_screen = ui_to_screen_space(viewport_rect, current_pos)?;
@@ -265,17 +266,17 @@ pub fn solve_pan_camera_transform(
     let translation = target_screen - transformed_anchor;
 
     let mut next_camera = camera_start;
-    next_camera.z_axis.x = translation.x;
-    next_camera.z_axis.y = translation.y;
+    next_camera.translation.x = translation.x;
+    next_camera.translation.y = translation.y;
     Some(next_camera)
 }
 
 pub fn solve_zoom_camera_transform(
-    camera_start: Mat3,
+    camera_start: Affine2D,
     anchor_fractal: Vec2,
     target_screen: Vec2,
     zoom_factor: f32,
-) -> Option<Mat3> {
+) -> Option<Affine2D> {
     if !zoom_factor.is_finite() || zoom_factor <= 0.0 {
         return None;
     }
@@ -292,19 +293,19 @@ pub fn solve_zoom_camera_transform(
         next_camera.x_axis.y * anchor_fractal.x + next_camera.y_axis.y * anchor_fractal.y,
     );
     let translation = target_screen - transformed_anchor;
-    next_camera.z_axis.x = translation.x;
-    next_camera.z_axis.y = translation.y;
+    next_camera.translation.x = translation.x;
+    next_camera.translation.y = translation.y;
 
     Some(next_camera)
 }
 
-pub fn solve_aspect_camera_transform(camera_start: Mat3, viewport_aspect: f32) -> Option<Mat3> {
+pub fn solve_aspect_camera_transform(camera_start: Affine2D, viewport_aspect: f32) -> Option<Affine2D> {
     if !viewport_aspect.is_finite() || viewport_aspect <= 1e-8 {
         return None;
     }
 
-    let x_axis = Vec2::new(camera_start.x_axis.x, camera_start.x_axis.y);
-    let y_axis = Vec2::new(camera_start.y_axis.x, camera_start.y_axis.y);
+    let x_axis = camera_start.x_axis;
+    let y_axis = camera_start.y_axis;
     let x_len = x_axis.length();
     let y_len = y_axis.length();
     if x_len <= 1e-8 || y_len <= 1e-8 {
@@ -349,11 +350,11 @@ mod tests {
         let histogram_height = 1152;
 
         // Non-trivial camera: scale, slight shear, translation.
-        let camera = Mat3::from_cols(
-            Vec3::new(0.92, 0.06, 0.0),
-            Vec3::new(-0.04, 0.88, 0.0),
-            Vec3::new(0.17, -0.11, 1.0),
-        );
+        let camera = Affine2D {
+            x_axis: Vec2::new(0.92, 0.06),
+            y_axis: Vec2::new(-0.04, 0.88),
+            translation: Vec2::new(0.17, -0.11),
+        };
 
         // Test a few points to ensure robust behavior across the view.
         let points = [
@@ -407,11 +408,11 @@ mod tests {
         let histogram_width = 2048;
         let histogram_height = 1152;
 
-        let camera = Mat3::from_cols(
-            Vec3::new(0.92, 0.06, 0.0),
-            Vec3::new(-0.04, 0.88, 0.0),
-            Vec3::new(0.17, -0.11, 1.0),
-        );
+        let camera = Affine2D {
+            x_axis: Vec2::new(0.92, 0.06),
+            y_axis: Vec2::new(-0.04, 0.88),
+            translation: Vec2::new(0.17, -0.11),
+        };
 
         let ui_points = [
             egui::pos2(260.0, 160.0),
@@ -456,11 +457,11 @@ mod tests {
 
     #[test]
     fn x_axis_rotate_only_solver_rotates_both_axes_and_preserves_lengths() {
-        let pre = Mat3::from_cols(
-            Vec3::new(2.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
+        let pre = Affine2D {
+            x_axis: Vec2::new(2.0, 0.0),
+            y_axis: Vec2::new(0.0, 1.0),
+            translation: Vec2::ZERO,
+        };
         let target_x_endpoint = Vec2::new(0.0, 10.0);
 
         let next = solve_pre_affine_x_axis_rotate_only(pre, target_x_endpoint);
@@ -476,11 +477,11 @@ mod tests {
 
     #[test]
     fn y_axis_rotate_only_solver_rotates_both_axes_and_preserves_lengths() {
-        let pre = Mat3::from_cols(
-            Vec3::new(2.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
+        let pre = Affine2D {
+            x_axis: Vec2::new(2.0, 0.0),
+            y_axis: Vec2::new(0.0, 1.0),
+            translation: Vec2::ZERO,
+        };
         let target_y_endpoint = Vec2::new(10.0, 0.0);
 
         let next = solve_pre_affine_y_axis_rotate_only(pre, target_y_endpoint);
@@ -496,11 +497,11 @@ mod tests {
 
     #[test]
     fn x_axis_rotate_scale_only_solver_keeps_angle_and_scales_axes_together() {
-        let pre = Mat3::from_cols(
-            Vec3::new(2.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
+        let pre = Affine2D {
+            x_axis: Vec2::new(2.0, 0.0),
+            y_axis: Vec2::new(0.0, 1.0),
+            translation: Vec2::ZERO,
+        };
         let target_x_endpoint = Vec2::new(2.0, 2.0);
 
         let next = solve_pre_affine_x_axis_rotate_scale_only(pre, target_x_endpoint);
@@ -523,11 +524,11 @@ mod tests {
 
     #[test]
     fn y_axis_rotate_scale_only_solver_keeps_angle_and_scales_axes_together() {
-        let pre = Mat3::from_cols(
-            Vec3::new(2.0, 0.0, 0.0),
-            Vec3::new(0.0, 1.0, 0.0),
-            Vec3::new(0.0, 0.0, 1.0),
-        );
+        let pre = Affine2D {
+            x_axis: Vec2::new(2.0, 0.0),
+            y_axis: Vec2::new(0.0, 1.0),
+            translation: Vec2::ZERO,
+        };
         let target_y_endpoint = Vec2::new(2.0, 2.0);
 
         let next = solve_pre_affine_y_axis_rotate_scale_only(pre, target_y_endpoint);

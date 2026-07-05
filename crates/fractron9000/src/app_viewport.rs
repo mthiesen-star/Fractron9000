@@ -64,9 +64,9 @@ impl FractronApp {
             {
                 let pre = branch.pre_affine;
                 let handle_fractal = match handle {
-                    TriadHandle::Origin => pre.transform_point2(Vec2::ZERO),
-                    TriadHandle::XAxis => pre.transform_point2(Vec2::X),
-                    TriadHandle::YAxis => pre.transform_point2(Vec2::Y),
+                    TriadHandle::Origin => pre.transform_point(Vec2::ZERO),
+                    TriadHandle::XAxis => pre.transform_point(Vec2::X),
+                    TriadHandle::YAxis => pre.transform_point(Vec2::Y),
                 };
                 self.triad_drag_handle_offset_ui = fractal_to_ui_space(
                     viewport_rect,
@@ -234,7 +234,7 @@ impl FractronApp {
             .map(|m| {
                 format!(
                     "[{:.4},{:.4},{:.4};{:.4},{:.4},{:.4}]",
-                    m.x_axis.x, m.y_axis.x, m.z_axis.x, m.x_axis.y, m.y_axis.y, m.z_axis.y
+                    m.x_axis.x, m.y_axis.x, m.translation.x, m.x_axis.y, m.y_axis.y, m.translation.y
                 )
             })
             .unwrap_or_else(|| "none".to_string());
@@ -252,10 +252,10 @@ impl FractronApp {
             pan_anchor_fractal,
             camera.x_axis.x,
             camera.y_axis.x,
-            camera.z_axis.x,
+            camera.translation.x,
             camera.x_axis.y,
             camera.y_axis.y,
-            camera.z_axis.y,
+            camera.translation.y,
             camera_x_scale,
             camera_y_scale,
             viewport_rect.left(),
@@ -307,9 +307,9 @@ impl FractronApp {
 
         for (branch_index, branch) in flame.branches.iter().enumerate() {
             let pre = branch.pre_affine;
-            let origin = pre.transform_point2(Vec2::ZERO);
-            let x_point = pre.transform_point2(Vec2::X);
-            let y_point = pre.transform_point2(Vec2::Y);
+            let origin = pre.transform_point(Vec2::ZERO);
+            let x_point = pre.transform_point(Vec2::X);
+            let y_point = pre.transform_point(Vec2::Y);
 
             let (Some(origin_ui), Some(x_ui), Some(y_ui)) = (
                 fractal_to_ui_space(
@@ -372,9 +372,9 @@ impl FractronApp {
 
         for (branch_index, branch) in flame.branches.iter().enumerate() {
             let pre = branch.pre_affine;
-            let origin = pre.transform_point2(Vec2::ZERO);
-            let x_point = pre.transform_point2(Vec2::X);
-            let y_point = pre.transform_point2(Vec2::Y);
+            let origin = pre.transform_point(Vec2::ZERO);
+            let x_point = pre.transform_point(Vec2::X);
+            let y_point = pre.transform_point(Vec2::Y);
 
             let (Some(o_ui), Some(x_ui), Some(y_ui)) = (
                 fractal_to_ui_space(

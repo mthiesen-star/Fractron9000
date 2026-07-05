@@ -4,9 +4,10 @@
 //! We manually parse XML with quick-xml to handle dynamic attributes (variation names with weights)
 //! which don't fit neatly into serde's struct-based deserialization.
 
+use crate::affine2d::Affine2D;
 use crate::flame::{Branch, Flame, VariEntry};
 use crate::variations::Variation;
-use glam::{Mat3, Vec2, Vec3, Vec4};
+use glam::{Vec2, Vec4};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use std::io::Cursor;
@@ -54,7 +55,7 @@ fn parse_float_pair(s: &str) -> Result<(f32, f32), ParseError> {
 }
 
 /// Helper to parse 6 floats (2D affine transform coefficients: a b c d e f).
-fn parse_affine_coefs(s: &str) -> Result<Mat3, ParseError> {
+fn parse_affine_coefs(s: &str) -> Result<Affine2D, ParseError> {
     let coefs = parse_floats(s)?;
     if coefs.len() != 6 {
         return Err(ParseError::InvalidData(format!(
@@ -65,12 +66,11 @@ fn parse_affine_coefs(s: &str) -> Result<Mat3, ParseError> {
     // Coefs are: a b c d e f
     // They represent the 2x3 affine: [a c e]
     //                                [b d f]
-    // In Mat3 (column-major): each column is [x; y; 0] for the basis vectors
-    Ok(Mat3::from_cols(
-        Vec3::new(coefs[0], coefs[1], 0.0),
-        Vec3::new(coefs[2], coefs[3], 0.0),
-        Vec3::new(coefs[4], coefs[5], 1.0),
-    ))
+    Ok(Affine2D {
+        x_axis: Vec2::new(coefs[0], coefs[1]),
+        y_axis: Vec2::new(coefs[2], coefs[3]),
+        translation: Vec2::new(coefs[4], coefs[5]),
+    })
 }
 
 /// Helper to extract xform attributes and create a branch.
@@ -131,7 +131,7 @@ fn parse_xform_element(e: &quick_xml::events::BytesStart, reader: &quick_xml::Re
     let pre_affine = parse_affine_coefs(&coefs_str)?;
     let post_affine = match post_str {
         Some(post) => parse_affine_coefs(&post)?,
-        None => Mat3::IDENTITY,
+        None => Affine2D::IDENTITY,
     };
 
     // Build branch
@@ -260,11 +260,11 @@ pub fn parse_flame_xml(xml: &str) -> Result<Flame, ParseError> {
     let xx = theta.cos() * cam_scale;
     let xy = theta.sin() * cam_scale;
 
-    let camera_transform = Mat3::from_cols(
-        Vec3::new(xx, xy, 0.0),
-        Vec3::new(-xy, xx, 0.0),
-        Vec3::new(center_x, center_y, 1.0),
-    );
+    let camera_transform = Affine2D {
+        x_axis: Vec2::new(xx, xy),
+        y_axis: Vec2::new(-xy, xx),
+        translation: Vec2::new(center_x, center_y),
+    };
 
     // Parse background color
     let bg_floats = parse_floats(&flame_background)?;

@@ -81,8 +81,8 @@ impl FractronApp {
             log::debug!("  Branch {}: weight={}, pre_affine translation=({}, {})", 
                 i, 
                 branch.weight,
-                branch.pre_affine.z_axis.x,
-                branch.pre_affine.z_axis.y
+                branch.pre_affine.translation.x,
+                branch.pre_affine.translation.y
             );
         }
         

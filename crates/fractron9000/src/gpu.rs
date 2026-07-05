@@ -2,7 +2,7 @@
 
 use wgpu::*;
 use wgpu::util::DeviceExt;
-use glam::Mat3;
+use fractal_core::Affine2D;
 use web_time::Instant;
 use fractal_core::flame::Flame;
 use crate::camera_math::compute_vps_transform;
@@ -28,13 +28,10 @@ pub struct GpuAffine {
 }
 
 impl GpuAffine {
-    pub fn from_mat3(m: Mat3) -> Self {
-        // Convert column-major Mat3 to row-based GPU format
-        // Mat3 columns are: [a,c,0], [b,d,0], [e,f,1]
-        // We need rows: [a,b,e] and [c,d,f]
+    pub fn from_affine2d(a: Affine2D) -> Self {
         Self {
-            row0: [m.x_axis.x, m.y_axis.x, m.z_axis.x, 0.0],
-            row1: [m.x_axis.y, m.y_axis.y, m.z_axis.y, 0.0],
+            row0: [a.x_axis.x, a.y_axis.x, a.translation.x, 0.0],
+            row1: [a.x_axis.y, a.y_axis.y, a.translation.y, 0.0],
         }
     }
 }
@@ -948,8 +945,8 @@ impl GpuRenderer {
     // property. Move it (and invPixArea) to a dedicated SceneData buffer in a future refactor.
 
     fn flame_to_gpu_flat(flame: &Flame, width: u32, height: u32) -> Vec<f32> {
-        let camera_transform = GpuAffine::from_mat3(flame.camera_transform);
-        let vps = GpuAffine::from_mat3(compute_vps_transform(flame.camera_transform, width, height));
+        let camera_transform = GpuAffine::from_affine2d(flame.camera_transform);
+        let vps = GpuAffine::from_affine2d(compute_vps_transform(flame.camera_transform, width, height));
         let branch_count = flame.branches.len() as u32;
         
         vec![
@@ -1051,10 +1048,10 @@ impl GpuRenderer {
             log::debug!("  Branch {} RAW MATRIX:", idx);
             log::debug!("    x_axis: {:?}", branch.pre_affine.x_axis);
             log::debug!("    y_axis: {:?}", branch.pre_affine.y_axis);
-            log::debug!("    z_axis: {:?}", branch.pre_affine.z_axis);
+            log::debug!("    translation: {:?}", branch.pre_affine.translation);
             
-            let pre_affine_gpu = GpuAffine::from_mat3(branch.pre_affine);
-            let post_affine_gpu = GpuAffine::from_mat3(branch.post_affine);
+            let pre_affine_gpu = GpuAffine::from_affine2d(branch.pre_affine);
+            let post_affine_gpu = GpuAffine::from_affine2d(branch.post_affine);
             
             log::debug!("  Branch {}: chroma=[{}, {}]", idx, branch.chroma.x, branch.chroma.y);
             log::debug!("    pre_affine row0: {:?}", pre_affine_gpu.row0);
@@ -1118,8 +1115,8 @@ mod tests {
 
     #[test]
     fn test_gpu_affine_identity() {
-        let mat = Mat3::IDENTITY;
-        let gpu = GpuAffine::from_mat3(mat);
+        let affine = Affine2D::IDENTITY;
+        let gpu = GpuAffine::from_affine2d(affine);
         
         // Identity: rows should be [1, 0, 0] and [0, 1, 0]
         assert_eq!(gpu.row0[0], 1.0, "row0[0] should be 1.0 (x_axis.x)");
@@ -1133,13 +1130,13 @@ mod tests {
 
     #[test]
     fn test_gpu_affine_translation() {
-        // Create a mat3 with translation (3, 4)
-        let mat = Mat3::from_cols(
-            glam::Vec3::new(1.0, 0.0, 0.0),   // x_axis
-            glam::Vec3::new(0.0, 1.0, 0.0),   // y_axis
-            glam::Vec3::new(3.0, 4.0, 1.0),   // z_axis: [tx, ty, 1]
-        );
-        let gpu = GpuAffine::from_mat3(mat);
+        // Create an affine with translation (3, 4)
+        let affine = Affine2D {
+            x_axis: glam::Vec2::new(1.0, 0.0),
+            y_axis: glam::Vec2::new(0.0, 1.0),
+            translation: glam::Vec2::new(3.0, 4.0),
+        };
+        let gpu = GpuAffine::from_affine2d(affine);
         
         // Should have rows: [1, 0, 3] and [0, 1, 4]
         assert_eq!(gpu.row0[0], 1.0);
@@ -1153,9 +1150,9 @@ mod tests {
 
     #[test]
     fn test_gpu_affine_scale() {
-        // Create a mat3 with scale 2x
-        let mat = Mat3::from_scale(glam::Vec2::new(2.0, 2.0));
-        let gpu = GpuAffine::from_mat3(mat);
+        // Create an affine with scale 2x
+        let affine = Affine2D::from_scale(glam::Vec2::new(2.0, 2.0));
+        let gpu = GpuAffine::from_affine2d(affine);
         
         // Should have rows: [2, 0, 0] and [0, 2, 0]
         assert_eq!(gpu.row0[0], 2.0, "row0[0] should be 2.0 (x scale)");
@@ -1167,12 +1164,12 @@ mod tests {
     #[test]
     fn test_gpu_affine_scale_and_translate() {
         // scale(0.5) + translate(-0.8, 0)
-        let mat = Mat3::from_cols(
-            glam::Vec3::new(0.5, 0.0, 0.0),
-            glam::Vec3::new(0.0, 0.5, 0.0),
-            glam::Vec3::new(-0.8, 0.0, 1.0),
-        );
-        let gpu = GpuAffine::from_mat3(mat);
+        let affine = Affine2D {
+            x_axis: glam::Vec2::new(0.5, 0.0),
+            y_axis: glam::Vec2::new(0.0, 0.5),
+            translation: glam::Vec2::new(-0.8, 0.0),
+        };
+        let gpu = GpuAffine::from_affine2d(affine);
         
         // Should have rows: [0.5, 0, -0.8] and [0, 0.5, 0]
         assert_eq!(gpu.row0[0], 0.5);
@@ -1509,9 +1506,9 @@ mod tests {
         let normalized_weights = GpuRenderer::normalized_branch_weights(&flame);
         let b0_expected_weight = normalized_weights[0];
         
-        let b0_pre_gpu = GpuAffine::from_mat3(b0.pre_affine);
-        let b1_pre_gpu = GpuAffine::from_mat3(b1.pre_affine);
-        let b2_pre_gpu = GpuAffine::from_mat3(b2.pre_affine);
+        let b0_pre_gpu = GpuAffine::from_affine2d(b0.pre_affine);
+        let b1_pre_gpu = GpuAffine::from_affine2d(b1.pre_affine);
+        let b2_pre_gpu = GpuAffine::from_affine2d(b2.pre_affine);
         
         // Test 1: Branch 0 pre_affine row0 (results at indices 0, 1, 2, 3)
         log::debug!("Test 1: Branch 0 pre_affine.row0");
@@ -1522,7 +1519,7 @@ mod tests {
         assert!((results[2] - b0_pre_gpu.row0[2]).abs() < 0.001, "Branch 0 pre_affine.row0.z mismatch");
 
         // Test 2: Branch 0 post_affine row0 (results at indices 4, 5, 6, 7)
-        let b0_post_gpu = GpuAffine::from_mat3(b0.post_affine);
+        let b0_post_gpu = GpuAffine::from_affine2d(b0.post_affine);
         log::debug!("Test 2: Branch 0 post_affine.row0");
         log::debug!("  GPU read: ({}, {}, {})", results[4], results[5], results[6]);
         log::debug!("  Expected: ({}, {}, {})", b0_post_gpu.row0[0], b0_post_gpu.row0[1], b0_post_gpu.row0[2]);
