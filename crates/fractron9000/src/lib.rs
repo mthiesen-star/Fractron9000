@@ -27,6 +27,12 @@ enum TriadHandle {
     YAxis,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RendererStatus {
+    Ok,
+    Error(&'static str),
+}
+
 pub struct FractronApp {
     flame: Flame,
     gpu_renderer: Option<GpuRenderer>,
@@ -154,8 +160,8 @@ impl eframe::App for FractronApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let (menu_rect, content_rect, status_rect) = self.ui_regions(ui.max_rect());
         self.render_menu_bar(ui, menu_rect);
-        let status_right = self.render_content_area(ui, content_rect, _frame);
-        self.render_status_bar(ui, status_rect, status_right);
+        let renderer_status = self.render_content_area(ui, content_rect, _frame);
+        self.render_status_bar(ui, status_rect, renderer_status);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -170,7 +176,7 @@ impl FractronApp {
         ui: &mut egui::Ui,
         content_rect: egui::Rect,
         _frame: &mut eframe::Frame,
-    ) -> &'static str {
+    ) -> RendererStatus {
         let splitter_width: f32 = 6.0;
         let min_panel_width: f32 = 96.0;
         let min_viewport_width: f32 = 160.0;
@@ -197,7 +203,7 @@ impl FractronApp {
 
         self.handle_debug_dump_shortcut(ui, viewport_rect, target_width, target_height);
 
-        let mut status_right = "Ready";
+        let mut renderer_status = RendererStatus::Ok;
 
         self.render_left_panel(ui, left_panel_rect, _frame);
         Self::render_splitter(ui, splitter_rect, splitter_response.hovered(), splitter_response.dragged());
@@ -213,14 +219,15 @@ impl FractronApp {
 
             {
                 let Some(renderer) = self.gpu_renderer.as_mut() else {
-                    Self::report_renderer_unavailable(ui, &mut status_right);
+                    ui.label("GPU renderer not initialized. Check console for errors.");
+                    renderer_status = RendererStatus::Error("Renderer Offline");
                     return;
                 };
                 if renderer.needs_resize(target_width, target_height) {
                     if let Err(e) = renderer.resize(target_width, target_height) {
                         log::error!("Failed to resize renderer output: {}", e);
                         ui.label("Resize failed. See console for details.");
-                        status_right = "Resize error";
+                        renderer_status = RendererStatus::Error("Resize Failed");
                         return;
                     }
                     self.output_texture_id = None;
@@ -228,13 +235,14 @@ impl FractronApp {
             }
 
             let Some(renderer) = self.gpu_renderer.as_ref() else {
-                Self::report_renderer_unavailable(ui, &mut status_right);
+                ui.label("GPU renderer not initialized. Check console for errors.");
+                renderer_status = RendererStatus::Error("Renderer Offline");
                 return;
             };
             let (histogram_width, histogram_height) = renderer.histogram_size();
             self.histogram_size = (histogram_width, histogram_height);
 
-            status_right = Self::present_output_texture(
+            Self::present_output_texture(
                 ui,
                 renderer,
                 viewport_rect.size(),
@@ -254,7 +262,7 @@ impl FractronApp {
             );
         });
 
-        status_right
+        renderer_status
     }
 
     fn handle_debug_dump_shortcut(

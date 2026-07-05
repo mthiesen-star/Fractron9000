@@ -1,4 +1,4 @@
-use crate::{FractronApp, TriadHandle};
+use crate::{FractronApp, TriadHandle, RendererStatus};
 
 impl FractronApp {
     pub(crate) fn ui_regions(&self, full_rect: egui::Rect) -> (egui::Rect, egui::Rect, egui::Rect) {
@@ -43,11 +43,6 @@ impl FractronApp {
                 });
             });
         });
-    }
-
-    pub(crate) fn report_renderer_unavailable(ui: &mut egui::Ui, status_right: &mut &'static str) {
-        ui.label("GPU renderer not initialized. Check console for errors.");
-        *status_right = "Renderer unavailable";
     }
 
     pub(crate) fn render_splitter(
@@ -104,23 +99,8 @@ impl FractronApp {
         &self,
         ui: &mut egui::Ui,
         status_rect: egui::Rect,
-        status_right: &str,
+        renderer_status: RendererStatus,
     ) {
-        let (iterations_millions, iterations_per_sec_millions, quality) = self
-            .gpu_renderer
-            .as_ref()
-            .map(|r| {
-                (
-                    r.iteration_count() as f64 / 1_000_000.0,
-                    r.iterations_per_sec() / 1_000_000.0,
-                    r.quality(),
-                )
-            })
-            .unwrap_or((0.0, 0.0, 0.0));
-        let status_left = format!(
-            "Performed {:.1}M iterations at {:.1}M iterations/sec for a quality of {:.0}",
-            iterations_millions, iterations_per_sec_millions, quality
-        );
         let drag_constraint_hint = self.active_triad_axis_constraint_hint(ui);
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(status_rect), |ui| {
@@ -133,18 +113,39 @@ impl FractronApp {
                 ui.set_height(20.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
-                    ui.label(egui::RichText::new(&status_left).color(egui::Color32::from_gray(220)));
-                    ui.separator();
-                    ui.label(egui::RichText::new("Renderer: GPU").color(egui::Color32::from_gray(200)));
-                    if let Some(hint) = drag_constraint_hint {
-                        ui.separator();
-                        ui.label(egui::RichText::new(hint).color(egui::Color32::from_rgb(224, 196, 118)));
-                    }
+
+                    // Left: Constraint hint
+                    ui.push_id("status_left", |ui| {
+                        if let Some(hint) = drag_constraint_hint {
+                            ui.label(egui::RichText::new(hint).color(egui::Color32::from_rgb(224, 196, 118)));
+                        }
+                    });
+
+                    // Right: Renderer status or performance stats
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new(status_right)
-                                .color(egui::Color32::from_rgb(150, 210, 170)),
-                        );
+                        match renderer_status {
+                            RendererStatus::Error(msg) => {
+                                ui.label(egui::RichText::new(msg).color(egui::Color32::from_rgb(255, 100, 100)));
+                            }
+                            RendererStatus::Ok => {
+                                let (iterations_millions, iterations_per_sec_millions, quality) = self
+                                    .gpu_renderer
+                                    .as_ref()
+                                    .map(|r| {
+                                        (
+                                            r.iteration_count() as f64 / 1_000_000.0,
+                                            r.iterations_per_sec() / 1_000_000.0,
+                                            r.quality(),
+                                        )
+                                    })
+                                    .unwrap_or((0.0, 0.0, 0.0));
+                                let perf_text = format!(
+                                    "Performed {:.1}M iterations at {:.1}M iterations/sec for a quality of {:.0}",
+                                    iterations_millions, iterations_per_sec_millions, quality
+                                );
+                                ui.label(egui::RichText::new(&perf_text).color(egui::Color32::from_gray(220)));
+                            }
+                        }
                     });
                 });
             });

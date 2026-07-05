@@ -274,7 +274,7 @@ impl FractronApp {
         viewport_size: egui::Vec2,
         frame: &mut eframe::Frame,
         output_texture_id: &mut Option<egui::TextureId>,
-    ) -> &'static str {
+    ) {
         if let Some(render_state) = frame.wgpu_render_state() {
             let texture_id = if let Some(id) = *output_texture_id {
                 id
@@ -290,10 +290,8 @@ impl FractronApp {
 
             let uv = egui::Rect::from_min_max(egui::pos2(0.0, 1.0), egui::pos2(1.0, 0.0));
             ui.add(egui::Image::new((texture_id, viewport_size)).uv(uv));
-            "Rendering"
         } else {
             ui.label("Render state unavailable");
-            "Render state unavailable"
         }
     }
 
