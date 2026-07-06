@@ -149,7 +149,8 @@ fn parse_xform_element(e: &quick_xml::events::BytesStart, reader: &quick_xml::Re
 }
 
 /// Parse a single flame from XML string (Apophysis format).
-pub fn parse_flame_xml(xml: &str) -> Result<Flame, ParseError> {
+/// Returns the flame's name alongside the parsed `Flame`.
+pub fn parse_flame_xml(xml: &str) -> Result<(String, Flame), ParseError> {
     let mut reader = Reader::from_reader(Cursor::new(xml.as_bytes()));
     let mut buf = Vec::new();
 
@@ -284,9 +285,7 @@ pub fn parse_flame_xml(xml: &str) -> Result<Flame, ParseError> {
         branches.push(Branch::default());
     }
 
-    Ok(Flame {
-        name: flame_name,
-        version: flame_version,
+    Ok((flame_name, Flame {
         camera_transform,
         brightness: flame_brightness,
         gamma: flame_gamma,
@@ -294,7 +293,7 @@ pub fn parse_flame_xml(xml: &str) -> Result<Flame, ParseError> {
         background,
         branches,
         palette: None,
-    })
+    }))
 }
 
 /// Parse all flames from a .flame file (which may contain multiple `<flame>` elements).
@@ -319,8 +318,7 @@ pub fn parse_flame_file(contents: &str) -> Result<Vec<(String, Flame)>, ParseErr
                 
                 // Try to parse this flame
                 match parse_flame_xml(flame_xml) {
-                    Ok(flame) => {
-                        let name = flame.name.clone();
+                    Ok((name, flame)) => {
                         result.push((name, flame));
                     }
                     Err(e) => {
@@ -371,8 +369,8 @@ mod tests {
         let result = parse_flame_xml(xml);
         assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
 
-        let flame = result.unwrap();
-        assert_eq!(flame.name, "test");
+        let (name, flame) = result.unwrap();
+        assert_eq!(name, "test");
         assert!((flame.brightness - 1.5).abs() < 0.001);
         assert_eq!(flame.branches.len(), 1);
     }

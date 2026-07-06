@@ -104,12 +104,6 @@ impl Branch {
 /// All fields are immutable; use `with_*` methods to create modified copies.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Flame {
-    /// Human-readable name.
-    pub name: String,
-
-    /// Version string (e.g., "Fractron9000 2.0").
-    pub version: String,
-
     /// Camera affine transform (defines view rectangle and zoom).
     pub camera_transform: Affine2D,
 
@@ -136,8 +130,6 @@ impl Flame {
     /// Create a new flame with default values.
     pub fn default() -> Self {
         Flame {
-            name: "New Fractal".to_string(),
-            version: "Fractron9000 2.0".to_string(),
             camera_transform: Affine2D::IDENTITY,
             brightness: 500.0,  // DIAGNOSTIC: cranked way up
             gamma: 2.0,
@@ -205,18 +197,6 @@ impl Flame {
         flame.vibrancy = 1.0;
 
         flame
-    }
-
-    /// Return a new Flame with updated name.
-    pub fn with_name(mut self, name: String) -> Self {
-        self.name = name;
-        self
-    }
-
-    /// Return a new Flame with updated version.
-    pub fn with_version(mut self, version: String) -> Self {
-        self.version = version;
-        self
     }
 
     /// Return a new Flame with updated camera transform.

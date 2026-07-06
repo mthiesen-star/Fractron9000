@@ -15,6 +15,7 @@ pub mod affine2d;
 pub mod flame;
 pub mod io;
 pub mod palette;
+pub mod persist;
 pub mod variations;
 
 pub use affine2d::Affine2D;

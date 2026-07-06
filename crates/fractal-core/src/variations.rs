@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// Immutable variation function descriptor. IDs 0-29 match Apophysis/Fractron legacy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Variation {
     Linear = 0,
     Sinusoidal = 1,

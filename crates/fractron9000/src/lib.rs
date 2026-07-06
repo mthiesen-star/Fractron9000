@@ -76,7 +76,7 @@ impl FractronApp {
         log::info!("FractronApp::new: wgpu_render_state available = {}", cc.wgpu_render_state.is_some());
         
         // Debug: log flame structure
-        log::debug!("Flame created: name={}, branches={}", flame.name, flame.branches.len());
+        log::debug!("Flame created: branches={}", flame.branches.len());
         for (i, branch) in flame.branches.iter().enumerate() {
             log::debug!("  Branch {}: weight={}, pre_affine translation=({}, {})", 
                 i, 
