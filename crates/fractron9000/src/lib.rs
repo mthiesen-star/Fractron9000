@@ -5,6 +5,7 @@ mod app_layout;
 mod app_panel;
 mod app_viewport;
 mod platform_bootstrap;
+mod platform_open;
 mod platform_save;
 
 use gpu::GpuRenderer;
@@ -34,6 +35,14 @@ enum RendererStatus {
     Error(&'static str),
 }
 
+#[derive(Default)]
+pub(crate) enum MenuAction {
+    #[default]
+    None,
+    SaveAs,
+    Open,
+}
+
 pub struct FractronApp {
     flame: Flame,
     gpu_renderer: Option<GpuRenderer>,
@@ -45,6 +54,7 @@ pub struct FractronApp {
     triad_drag_handle_offset_ui: Option<egui::Vec2>,
     left_panel_width: f32,
     last_flame: Flame,
+    open_slot: platform_open::OpenSlot,
     // Written by ui(), read by the following frame's logic() (layout only known after ui() runs)
     viewport_rect: egui::Rect,
     histogram_size: (u32, u32),
@@ -117,6 +127,7 @@ impl FractronApp {
             triad_drag_handle_offset_ui: None,
             left_panel_width: 256.0,
             last_flame: flame.clone(),
+            open_slot: platform_open::new_slot(),
             viewport_rect: egui::Rect::ZERO,
             histogram_size: (1024, 768),
             hovered_triad_handle: None,
@@ -126,6 +137,14 @@ impl FractronApp {
 
 impl eframe::App for FractronApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Apply any flame loaded by a pending open operation.
+        let pending = self.open_slot.try_lock().ok().and_then(|mut g| g.take());
+        match pending {
+            Some(Ok(flame)) => self.apply_loaded_flame(flame),
+            Some(Err(e))    => log::error!("Open: {}", e),
+            None            => {}
+        }
+
         // Process viewport input using the current frame's input state.
         // viewport_rect and histogram_size were cached by the previous ui() pass.
         if self.viewport_rect.area() > 0.0 {
@@ -160,8 +179,10 @@ impl eframe::App for FractronApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let (menu_rect, content_rect, status_rect) = self.ui_regions(ui.max_rect());
-        if self.render_menu_bar(ui, menu_rect) {
-            platform_save::save_as(&self.flame);
+        match self.render_menu_bar(ui, menu_rect) {
+            MenuAction::SaveAs => platform_save::save_as(&self.flame),
+            MenuAction::Open   => platform_open::start_open(&self.open_slot),
+            MenuAction::None   => {}
         }
         let renderer_status = self.render_content_area(ui, content_rect, _frame);
         self.render_status_bar(ui, status_rect, renderer_status);
@@ -174,6 +195,15 @@ impl eframe::App for FractronApp {
 }
 
 impl FractronApp {
+    fn apply_loaded_flame(&mut self, flame: Flame) {
+        self.flame = flame;
+        self.drag_start_state = None;
+        self.pan_anchor_fractal = None;
+        self.selected_branch = None;
+        self.triad_drag_handle = None;
+        self.triad_drag_handle_offset_ui = None;
+    }
+
     fn render_content_area(
         &mut self,
         ui: &mut egui::Ui,

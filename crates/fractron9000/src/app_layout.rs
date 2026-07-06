@@ -1,4 +1,4 @@
-use crate::{FractronApp, TriadHandle, RendererStatus};
+use crate::{FractronApp, MenuAction, TriadHandle, RendererStatus};
 
 impl FractronApp {
     pub(crate) fn ui_regions(&self, full_rect: egui::Rect) -> (egui::Rect, egui::Rect, egui::Rect) {
@@ -29,8 +29,8 @@ impl FractronApp {
         (menu_rect, content_rect, status_rect)
     }
 
-    pub(crate) fn render_menu_bar(&self, ui: &mut egui::Ui, menu_rect: egui::Rect) -> bool {
-        let mut save_as_clicked = false;
+    pub(crate) fn render_menu_bar(&self, ui: &mut egui::Ui, menu_rect: egui::Rect) -> MenuAction {
+        let mut action = MenuAction::None;
         ui.scope_builder(egui::UiBuilder::new().max_rect(menu_rect), |ui| {
             let frame = egui::Frame::new()
                 .fill(egui::Color32::from_rgb(14, 16, 20))
@@ -40,8 +40,12 @@ impl FractronApp {
             frame.show(ui, |ui| {
                 egui::MenuBar::new().ui(ui, |ui| {
                     ui.menu_button("File", |ui| {
+                        if ui.button("Open...").clicked() {
+                            action = MenuAction::Open;
+                            ui.close_menu();
+                        }
                         if ui.button("Save As...").clicked() {
-                            save_as_clicked = true;
+                            action = MenuAction::SaveAs;
                             ui.close_menu();
                         }
                     });
@@ -49,7 +53,7 @@ impl FractronApp {
                 });
             });
         });
-        save_as_clicked
+        action
     }
 
     pub(crate) fn render_splitter(
