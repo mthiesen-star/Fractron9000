@@ -5,6 +5,7 @@ mod app_layout;
 mod app_panel;
 mod app_viewport;
 mod platform_bootstrap;
+mod platform_save;
 
 use gpu::GpuRenderer;
 use fractal_core::flame::Flame;
@@ -159,7 +160,9 @@ impl eframe::App for FractronApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let (menu_rect, content_rect, status_rect) = self.ui_regions(ui.max_rect());
-        self.render_menu_bar(ui, menu_rect);
+        if self.render_menu_bar(ui, menu_rect) {
+            platform_save::save_as(&self.flame);
+        }
         let renderer_status = self.render_content_area(ui, content_rect, _frame);
         self.render_status_bar(ui, status_rect, renderer_status);
     }
