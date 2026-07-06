@@ -155,7 +155,6 @@ pub fn parse_flame_xml(xml: &str) -> Result<(String, Flame), ParseError> {
     let mut buf = Vec::new();
 
     let mut flame_name = String::new();
-    let mut flame_version = String::new();
     let mut flame_size = "800 600".to_string();
     let mut flame_center = "0 0".to_string();
     let mut flame_scale = 1.0_f32;
@@ -187,7 +186,7 @@ pub fn parse_flame_xml(xml: &str) -> Result<(String, Flame), ParseError> {
 
                         match key {
                             "name" => flame_name = value.to_string(),
-                            "version" => flame_version = value.to_string(),
+                            "version" => {}
                             "size" => flame_size = value.to_string(),
                             "center" => flame_center = value.to_string(),
                             "scale" => {

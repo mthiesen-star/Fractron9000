@@ -42,11 +42,11 @@ impl FractronApp {
                     ui.menu_button("File", |ui| {
                         if ui.button("Open...").clicked() {
                             action = MenuAction::Open;
-                            ui.close_menu();
+                            ui.close();
                         }
                         if ui.button("Save As...").clicked() {
                             action = MenuAction::SaveAs;
-                            ui.close_menu();
+                            ui.close();
                         }
                     });
                     ui.menu_button("Edit", |_ui| {});
