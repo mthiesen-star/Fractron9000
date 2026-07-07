@@ -3,6 +3,7 @@
 use wgpu::*;
 use wgpu::util::DeviceExt;
 use fractal_core::Affine2D;
+use fractal_core::flame::Branch;
 use web_time::Instant;
 use fractal_core::flame::Flame;
 use crate::camera_math::compute_vps_transform;
@@ -10,6 +11,7 @@ use crate::camera_math::compute_vps_transform;
 // Iteration constants (matching chaos game chaos settings)
 const THREADS_PER_FRAME: u32 = 65536;
 const ITERATIONS_PER_THREAD: u32 = 1000;
+const MAX_BRANCHES: usize = 8;
 const MAX_VARIATIONS_PER_BRANCH: usize = 4;
 const QUALITY_TARGET: f64 = 4096.0;
 
@@ -947,7 +949,7 @@ impl GpuRenderer {
     fn flame_to_gpu_flat(flame: &Flame, width: u32, height: u32) -> Vec<f32> {
         let camera_transform = GpuAffine::from_affine2d(flame.camera_transform);
         let vps = GpuAffine::from_affine2d(compute_vps_transform(flame.camera_transform, width, height));
-        let branch_count = flame.branches.len() as u32;
+        let branch_count = flame.branches.len().min(MAX_BRANCHES) as u32;
         
         vec![
             // camera_transform.row0 (4 f32s)
@@ -984,14 +986,13 @@ impl GpuRenderer {
         ]
     }
 
-    fn normalized_branch_weights(flame: &Flame) -> Vec<f32> {
-        let branch_count = flame.branches.len();
+    fn normalized_branch_weights(branches: &[Branch]) -> Vec<f32> {
+        let branch_count = branches.len();
         if branch_count == 0 {
             return Vec::new();
         }
 
-        let clamped_weights: Vec<f32> = flame
-            .branches
+        let clamped_weights: Vec<f32> = branches
             .iter()
             .map(|branch| branch.weight.max(0.0))
             .collect();
@@ -1005,19 +1006,32 @@ impl GpuRenderer {
     }
     
     fn flame_to_gpu_branches(flame: &Flame) -> (Vec<f32>, Vec<GpuVariEntry>) {
-        let mut branch_data = Vec::new();  // Flat array of f32
-        let mut gpu_variations = Vec::new();
-        let branch_count = flame.branches.len();
-        let normalized_weights = Self::normalized_branch_weights(flame);
+        let packed_branch_count = flame.branches.len().min(MAX_BRANCHES);
+        if flame.branches.len() > MAX_BRANCHES {
+            log::warn!(
+                "Flame has {} branches; truncating GPU upload to MAX_BRANCHES={}.",
+                flame.branches.len(),
+                MAX_BRANCHES
+            );
+        }
+
+        let mut branch_data = Vec::with_capacity(MAX_BRANCHES * 18);
+        let mut gpu_variations = Vec::with_capacity(MAX_BRANCHES * MAX_VARIATIONS_PER_BRANCH);
+        let normalized_weights = Self::normalized_branch_weights(&flame.branches[..packed_branch_count]);
         
-        log::debug!("Converting {} branches to GPU format (flat array)", flame.branches.len());
-        if branch_count > 0 {
+        log::debug!(
+            "Converting {} branches to GPU format (packed={}, max={})",
+            flame.branches.len(),
+            packed_branch_count,
+            MAX_BRANCHES
+        );
+        if packed_branch_count > 0 {
             let normalized_sum: f32 = normalized_weights.iter().sum();
             log::debug!("  Normalized branch weights sum={}", normalized_sum);
         }
         
-        for (idx, branch) in flame.branches.iter().enumerate() {
-            let var_offset = gpu_variations.len() as u32;
+        for (idx, branch) in flame.branches.iter().take(MAX_BRANCHES).enumerate() {
+            let var_offset = (idx * MAX_VARIATIONS_PER_BRANCH) as u32;
             let packed_var_count = branch.variations.len().min(MAX_VARIATIONS_PER_BRANCH) as u32;
             
             if branch.variations.len() > MAX_VARIATIONS_PER_BRANCH {
@@ -1101,9 +1115,39 @@ impl GpuRenderer {
             branch_data.push(f32::from_bits(packed_var_count));
             branch_data.push(f32::from_bits(var_offset));
         }
+
+        for idx in packed_branch_count..MAX_BRANCHES {
+            let var_offset = (idx * MAX_VARIATIONS_PER_BRANCH) as u32;
+
+            // Padding branch occupies a fixed slot with zero weight so it is never selected.
+            branch_data.extend_from_slice(&[
+                1.0, 0.0, 0.0,
+                0.0, 1.0, 0.0,
+                1.0, 0.0, 0.0,
+                0.0, 1.0, 0.0,
+                0.5, 0.5,
+                0.0, 0.5,
+                f32::from_bits(0),
+                f32::from_bits(var_offset),
+            ]);
+
+            for _ in 0..MAX_VARIATIONS_PER_BRANCH {
+                gpu_variations.push(GpuVariEntry {
+                    var_id: 0,
+                    weight: 0.0,
+                });
+            }
+        }
         
-        log::debug!("  Created {} GPU branches ({} total f32s), {} total variations", 
-                 flame.branches.len(), branch_data.len(), gpu_variations.len());
+        debug_assert_eq!(branch_data.len(), MAX_BRANCHES * 18);
+        debug_assert_eq!(gpu_variations.len(), MAX_BRANCHES * MAX_VARIATIONS_PER_BRANCH);
+
+        log::debug!(
+            "  Created {} packed GPU branches ({} total f32s), {} total variations",
+            MAX_BRANCHES,
+            branch_data.len(),
+            gpu_variations.len()
+        );
         
         (branch_data, gpu_variations)
     }

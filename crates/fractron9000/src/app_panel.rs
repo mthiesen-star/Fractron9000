@@ -1,4 +1,5 @@
 use crate::FractronApp;
+use fractal_core::flame::Branch;
 use fractal_core::flame::VariEntry;
 use fractal_core::variations::Variation;
 use glam::{Vec2, Vec4};
@@ -139,6 +140,8 @@ impl FractronApp {
     }
 
     pub(crate) fn render_branch_tabs(&mut self, ui: &mut egui::Ui) -> bool {
+        const MAX_BRANCHES: usize = 8;
+
         let branch_count = self.flame.branches.len();
         if branch_count == 0 {
             self.selected_branch = None;
@@ -154,27 +157,48 @@ impl FractronApp {
         );
 
         let mut changed = false;
-        egui::ScrollArea::horizontal()
-            .id_salt("branch-tabs")
-            .max_height(24.0)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    for branch_index in 0..branch_count {
-                        let selected = self.selected_branch == Some(branch_index);
-                        let label = egui::RichText::new(branch_index.to_string()).size(10.0);
-                        if ui
-                            .add_sized(
-                                [18.0, 16.0],
-                                egui::Button::new(label).selected(selected),
-                            )
-                            .clicked()
-                        {
-                            self.selected_branch = Some(branch_index);
-                            changed = true;
+        ui.horizontal(|ui| {
+            egui::ScrollArea::horizontal()
+                .id_salt("branch-tabs")
+                .max_height(24.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        for branch_index in 0..branch_count {
+                            let selected = self.selected_branch == Some(branch_index);
+                            let label = egui::RichText::new(branch_index.to_string()).size(10.0);
+                            if ui
+                                .add_sized(
+                                    [18.0, 16.0],
+                                    egui::Button::new(label).selected(selected),
+                                )
+                                .clicked()
+                            {
+                                self.selected_branch = Some(branch_index);
+                                changed = true;
+                            }
                         }
-                    }
+                    });
                 });
-            });
+
+            let can_add_branch = branch_count < MAX_BRANCHES;
+            let add_response = ui
+                .add_enabled(
+                    can_add_branch,
+                    egui::Button::new(egui::RichText::new("+").size(10.0)).min_size([18.0, 16.0].into()),
+                )
+                .on_hover_text(if can_add_branch {
+                    "Add branch"
+                } else {
+                    "Maximum branch count reached"
+                });
+
+            if add_response.clicked()
+            {
+                self.flame.branches.push(Branch::default());
+                self.selected_branch = Some(self.flame.branches.len() - 1);
+                changed = true;
+            }
+        });
 
         changed
     }
