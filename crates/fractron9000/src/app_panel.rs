@@ -44,6 +44,11 @@ impl FractronApp {
                         panel_dirty = true;
                     }
 
+                    // Branch deletion can change selection; avoid using a stale index this frame.
+                    if self.selected_branch != Some(branch_index) {
+                        return;
+                    }
+
                     ui.add_space(8.0);
 
                     if self.render_branch_variation_controls(ui, branch_index) {
@@ -208,11 +213,30 @@ impl FractronApp {
         ui: &mut egui::Ui,
         branch_index: usize,
     ) -> bool {
+        let mut changed = false;
+
+        if ui
+            .button(egui::RichText::new("Delete Branch").size(11.0))
+            .on_hover_text("Remove this branch")
+            .clicked()
+            && branch_index < self.flame.branches.len()
+        {
+            self.flame.branches.remove(branch_index);
+            self.selected_branch = if self.flame.branches.is_empty() {
+                None
+            } else if branch_index >= self.flame.branches.len() {
+                Some(self.flame.branches.len() - 1)
+            } else {
+                Some(branch_index)
+            };
+            return true;
+        }
+
         let Some(branch) = self.flame.branches.get_mut(branch_index) else {
-            return false;
+            return changed;
         };
 
-        let mut changed = false;
+        ui.add_space(6.0);
 
         ui.horizontal(|ui| {
             ui.label("Weight:");
