@@ -32,6 +32,12 @@ impl FractronApp {
                 ui.label(egui::RichText::new("Palette + Parameters").color(egui::Color32::from_gray(200)));
                 ui.add_space(4.0);
 
+                if self.render_branch_tabs(ui) {
+                    panel_dirty = true;
+                }
+
+                ui.add_space(8.0);
+
                 if let Some(branch_index) = self.selected_branch {
                     if self.render_branch_parameter_controls(ui, branch_index) {
                         panel_dirty = true;
@@ -128,6 +134,47 @@ impl FractronApp {
         if self.flame.background != old_background {
             changed = true;
         }
+
+        changed
+    }
+
+    pub(crate) fn render_branch_tabs(&mut self, ui: &mut egui::Ui) -> bool {
+        let branch_count = self.flame.branches.len();
+        if branch_count == 0 {
+            self.selected_branch = None;
+            ui.label(egui::RichText::new("(no branches)").color(egui::Color32::from_gray(140)));
+            return false;
+        }
+
+        debug_assert!(
+            self.selected_branch.is_none_or(|branch_index| branch_index < branch_count),
+            "selected_branch out of bounds: {:?} (branch_count={})",
+            self.selected_branch,
+            branch_count
+        );
+
+        let mut changed = false;
+        egui::ScrollArea::horizontal()
+            .id_salt("branch-tabs")
+            .max_height(24.0)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    for branch_index in 0..branch_count {
+                        let selected = self.selected_branch == Some(branch_index);
+                        let label = egui::RichText::new(branch_index.to_string()).size(10.0);
+                        if ui
+                            .add_sized(
+                                [18.0, 16.0],
+                                egui::Button::new(label).selected(selected),
+                            )
+                            .clicked()
+                        {
+                            self.selected_branch = Some(branch_index);
+                            changed = true;
+                        }
+                    }
+                });
+            });
 
         changed
     }
