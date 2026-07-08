@@ -163,26 +163,79 @@ impl FractronApp {
 
         let mut changed = false;
         ui.horizontal(|ui| {
+            let mut selected_tab_rect: Option<egui::Rect> = None;
+            let mut tab_border_bottom: Option<f32> = None;
+
             egui::ScrollArea::horizontal()
                 .id_salt("branch-tabs")
                 .max_height(24.0)
                 .show(ui, |ui| {
+                    let viewport_rect = ui.max_rect();
+
                     ui.horizontal(|ui| {
                         for branch_index in 0..branch_count {
                             let selected = self.selected_branch == Some(branch_index);
-                            let label = egui::RichText::new(branch_index.to_string()).size(10.0);
-                            if ui
+                            let label = egui::RichText::new(branch_index.to_string())
+                                .size(10.0)
+                                .color(if selected {
+                                    egui::Color32::from_rgb(225, 235, 250)
+                                } else {
+                                    egui::Color32::from_gray(185)
+                                });
+                            let response = ui
                                 .add_sized(
                                     [18.0, 16.0],
-                                    egui::Button::new(label).selected(selected),
-                                )
-                                .clicked()
-                            {
+                                    egui::Button::new(label).frame(false),
+                                );
+
+                            let rect = response.rect.shrink(0.5);
+                            tab_border_bottom = Some(rect.bottom());
+                            let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(78, 88, 110));
+                            let painter = ui.painter();
+
+                            // Draw tab borders manually so selected tabs omit the bottom edge.
+                            painter.line_segment([rect.left_top(), rect.right_top()], stroke);
+                            painter.line_segment([rect.left_top(), rect.left_bottom()], stroke);
+                            painter.line_segment([rect.right_top(), rect.right_bottom()], stroke);
+                            if selected {
+                                selected_tab_rect = Some(rect);
+                            }
+
+                            if response.clicked() {
                                 self.selected_branch = Some(branch_index);
                                 changed = true;
                             }
                         }
                     });
+
+                    // Draw the tab-strip baseline across the viewport, leaving a gap under the selected tab.
+                    let baseline_y = tab_border_bottom.unwrap_or(viewport_rect.bottom() - 0.5);
+                    let baseline_stroke =
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(78, 88, 110));
+                    if let Some(selected_rect) = selected_tab_rect {
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(viewport_rect.left(), baseline_y),
+                                egui::pos2(selected_rect.left(), baseline_y),
+                            ],
+                            baseline_stroke,
+                        );
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(selected_rect.right(), baseline_y),
+                                egui::pos2(viewport_rect.right(), baseline_y),
+                            ],
+                            baseline_stroke,
+                        );
+                    } else {
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(viewport_rect.left(), baseline_y),
+                                egui::pos2(viewport_rect.right(), baseline_y),
+                            ],
+                            baseline_stroke,
+                        );
+                    }
                 });
 
             let can_add_branch = branch_count < MAX_BRANCHES;
