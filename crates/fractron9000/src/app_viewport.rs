@@ -1,7 +1,7 @@
 use crate::camera_math::*;
 use crate::gpu::GpuRenderer;
 use crate::{
-    FractronApp, TriadHandle, TRIAD_COLOR, TRIAD_HOVER_COLOR, TRIAD_HOVER_RADIUS,
+    FractronApp, TriadHandle, TRIAD_OUTER_COLOR, TRIAD_INNER_COLOR, TRIAD_OUTER_HOVER_COLOR, TRIAD_INNER_HOVER_COLOR, TRIAD_HOVER_RADIUS,
     TRIAD_LINE_STROKE, TRIAD_POINT_RADIUS, ZOOM_SCROLL_SENSITIVITY,
 };
 use fractal_core::flame::Flame;
@@ -411,60 +411,65 @@ impl FractronApp {
             let is_x_dragged = is_selected && drag_handle == Some(TriadHandle::XAxis) && pointer_down;
             let is_y_dragged = is_selected && drag_handle == Some(TriadHandle::YAxis) && pointer_down;
 
-            let origin_color = if is_origin_hovered || is_origin_dragged {
-                TRIAD_HOVER_COLOR
+
+            let origin_inner_color = if is_origin_hovered || is_origin_dragged {
+                TRIAD_INNER_HOVER_COLOR
             } else {
-                TRIAD_COLOR
+                TRIAD_INNER_COLOR
             };
-            let x_color = if is_x_hovered || is_x_dragged {
-                TRIAD_HOVER_COLOR
+            let x_inner_color = if is_x_hovered || is_x_dragged {
+                TRIAD_INNER_HOVER_COLOR
             } else {
-                TRIAD_COLOR
+                TRIAD_INNER_COLOR
             };
-            let y_color = if is_y_hovered || is_y_dragged {
-                TRIAD_HOVER_COLOR
+            let y_inner_color = if is_y_hovered || is_y_dragged {
+                TRIAD_INNER_HOVER_COLOR
             } else {
-                TRIAD_COLOR
+                TRIAD_INNER_COLOR
             };
 
-            let origin_radius = if is_origin_hovered || is_origin_dragged {
-                TRIAD_POINT_RADIUS * 1.4
+            let origin_outer_color = if is_origin_hovered || is_origin_dragged {
+                TRIAD_OUTER_HOVER_COLOR
             } else {
-                TRIAD_POINT_RADIUS
+                TRIAD_OUTER_COLOR
             };
-            let x_radius = if is_x_hovered || is_x_dragged {
-                TRIAD_POINT_RADIUS * 1.4
+            let x_outer_color = if is_x_hovered || is_x_dragged {
+                TRIAD_OUTER_HOVER_COLOR
             } else {
-                TRIAD_POINT_RADIUS
+                TRIAD_OUTER_COLOR
             };
-            let y_radius = if is_y_hovered || is_y_dragged {
-                TRIAD_POINT_RADIUS * 1.4
+            let y_outer_color = if is_y_hovered || is_y_dragged {
+                TRIAD_OUTER_HOVER_COLOR
             } else {
-                TRIAD_POINT_RADIUS
+                TRIAD_OUTER_COLOR
             };
-            let hover_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 30, 30));
 
-            let line_thickness = if is_selected {
-                TRIAD_LINE_STROKE * 2.0
+            let line_inner_thickness = if is_selected {
+                TRIAD_LINE_STROKE + 2.0
             } else {
-                TRIAD_LINE_STROKE
+                TRIAD_LINE_STROKE 
             };
-            painter.line_segment([o_ui, x_ui], egui::Stroke::new(line_thickness, TRIAD_COLOR));
-            painter.line_segment([o_ui, y_ui], egui::Stroke::new(line_thickness, TRIAD_COLOR));
+            let line_outer_thickness = line_inner_thickness + 2.0;
 
-            painter.circle_filled(o_ui, origin_radius, origin_color);
-            painter.circle_filled(x_ui, x_radius, x_color);
-            painter.circle_filled(y_ui, y_radius, y_color);
 
-            if is_origin_hovered || is_origin_dragged {
-                painter.circle_stroke(o_ui, origin_radius, hover_stroke);
-            }
-            if is_x_hovered || is_x_dragged {
-                painter.circle_stroke(x_ui, x_radius, hover_stroke);
-            }
-            if is_y_hovered || is_y_dragged {
-                painter.circle_stroke(y_ui, y_radius, hover_stroke);
-            }
+            let inner_radius = if is_selected {
+                TRIAD_POINT_RADIUS + 2.0
+            } else {
+                TRIAD_POINT_RADIUS 
+            };
+            let outer_radius = inner_radius + 2.0;
+
+            painter.line_segment([o_ui, x_ui], egui::Stroke::new(line_outer_thickness, TRIAD_OUTER_COLOR));
+            painter.line_segment([o_ui, y_ui], egui::Stroke::new(line_outer_thickness, TRIAD_OUTER_COLOR));
+            painter.circle_filled(o_ui, outer_radius, origin_outer_color);
+            painter.circle_filled(x_ui, outer_radius, x_outer_color);
+            painter.circle_filled(y_ui, outer_radius, y_outer_color);
+
+            painter.line_segment([o_ui, x_ui], egui::Stroke::new(line_inner_thickness, TRIAD_INNER_COLOR));
+            painter.line_segment([o_ui, y_ui], egui::Stroke::new(line_inner_thickness, TRIAD_INNER_COLOR));
+            painter.circle_filled(o_ui, inner_radius, origin_inner_color);
+            painter.circle_filled(x_ui, inner_radius, x_inner_color);
+            painter.circle_filled(y_ui, inner_radius, y_inner_color);
         }
 
         if selected_branch.is_some() && pointer_down {

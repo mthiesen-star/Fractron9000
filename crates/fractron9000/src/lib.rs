@@ -16,11 +16,13 @@ use app_helpers::load_flame_from_file;
 
 
 const ZOOM_SCROLL_SENSITIVITY: f32 = 0.0050;
-const TRIAD_LINE_STROKE: f32 = 1.0;
-const TRIAD_POINT_RADIUS: f32 = 5.0;
+const TRIAD_LINE_STROKE: f32 = 2.0;
+const TRIAD_POINT_RADIUS: f32 = 4.0;
 const TRIAD_HOVER_RADIUS: f32 = 8.0;
-const TRIAD_COLOR: egui::Color32 = egui::Color32::from_rgb(220, 220, 220);
-const TRIAD_HOVER_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
+const TRIAD_OUTER_COLOR: egui::Color32 = egui::Color32::from_rgb(32, 32, 32);
+const TRIAD_INNER_COLOR: egui::Color32 = egui::Color32::from_rgb(224, 224, 224);
+const TRIAD_OUTER_HOVER_COLOR: egui::Color32 = egui::Color32::from_rgb(0, 0, 0);
+const TRIAD_INNER_HOVER_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TriadHandle {
