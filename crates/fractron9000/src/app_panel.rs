@@ -30,7 +30,7 @@ impl FractronApp {
                 ui.separator();
                 ui.add_space(8.0);
 
-                ui.label(egui::RichText::new("Palette + Parameters").color(egui::Color32::from_gray(200)));
+                ui.label(egui::RichText::new("Branches").color(egui::Color32::from_gray(200)));
                 ui.add_space(4.0);
 
                 if self.render_branch_tabs(ui) {
@@ -184,7 +184,7 @@ impl FractronApp {
                                 });
                             let response = ui
                                 .add_sized(
-                                    [18.0, 16.0],
+                                    [32.0, 28.0],
                                     egui::Button::new(label).frame(false),
                                 );
 
@@ -240,10 +240,19 @@ impl FractronApp {
 
             let can_add_branch = branch_count < MAX_BRANCHES;
             let add_response = ui
-                .add_enabled(
-                    can_add_branch,
-                    egui::Button::new(egui::RichText::new("+").size(10.0)).min_size([18.0, 16.0].into()),
-                )
+                .add_enabled_ui(can_add_branch, |ui| {
+                    ui.vertical(|ui| {
+                        ui.add_space(4.0);
+                        let response = ui.add_sized(
+                            [18.0, 12.0],
+                            egui::Button::new(egui::RichText::new("+").size(10.0)),
+                        );
+                        //ui.add_space(0.0);
+                        response
+                    })
+                    .inner
+                })
+                .inner
                 .on_hover_text(if can_add_branch {
                     "Add branch"
                 } else {
